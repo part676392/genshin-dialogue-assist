@@ -1,4 +1,4 @@
-"""Local dialogue-only assistance. No AI, network, cursor moves, or focus changes."""
+"""Local dialogue assistance. No AI/upload, cursor moves, or focus changes."""
 from __future__ import annotations
 
 import argparse
@@ -19,7 +19,7 @@ import story_clicker as s
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ['LOCALAPPDATA']) / 'GenshinDialogue'
 TITLE = '原神 会話アシスト'
-VERSION = '2026.09.28.4'
+VERSION = '2.0.0'
 # Explicit user setting after trying 500 ms and reporting it too slow.
 # A 250 ms target is not a measured game minimum or an evasion claim.
 TAP_PERIOD = .250
@@ -109,7 +109,7 @@ class DialoguePolicy:
                     stable_seconds=int(seconds))
 
 
-def tap_key(hwnd, name):
+def tap_key(hwnd, name, backend=None):
     """Send a short keyboard tap; never touch cursor position or confinement."""
     if name != 'F':
         raise ValueError('会話送りの入力はFだけです。')
@@ -118,6 +118,8 @@ def tap_key(hwnd, name):
     s.guard(hwnd, (left + right)//2, (top + bottom)//2)
     if any(s.key_state(key) & 0x8000 for key in (vk,0x01,0x10,0x11,0x12)):
         return False
+    if backend is not None:
+        return backend.tap_f(KEY_HOLD)
     scan = s.bind(s.U, 'MapVirtualKeyW', s.W.UINT, s.W.UINT, s.W.UINT)(vk, 0)
     down, up = s.INPUT(), s.INPUT()
     down.type = up.type = 1
@@ -137,7 +139,7 @@ def tap_key(hwnd, name):
 
 
 class Watcher:
-    def __init__(self, notify_after=60, sound=True, observe_only=False):
+    def __init__(self, notify_after=60, sound=True, observe_only=False, backend=None):
         self.policy = DialoguePolicy(notify_after)
         self.enabled, self.sound, self.observe_only = True, sound, observe_only
         self.title, self.detail = '会話を待っています', '原神の会話が始まったら、自動で送ります。'
@@ -149,6 +151,8 @@ class Watcher:
         self.last_mode = None
         self.input_times = deque(maxlen=40)
         self.pause_reason = None
+        self.backend = backend
+        self.setup_in_progress = False
 
     def toggle(self, reason='button'):
         self.enabled = not self.enabled
@@ -167,6 +171,9 @@ class Watcher:
                     target=self.target, events=list(self.events),version=VERSION,input_key='F',
                     target_interval_ms=round(TAP_PERIOD*1000),recent_inputs_per_second=round(rate,2),
                     updated_at=time.strftime('%Y-%m-%dT%H:%M:%S'),pause_reason=self.pause_reason,
+                    input_backend=self.backend.kind if self.backend else 'sendinput',
+                    input_ready=self.backend.ready if self.backend else True,
+                    input_error=self.backend.error if self.backend else '',
                     last_detection=self.policy.last_detection)
 
     def publish(self, now):
@@ -186,6 +193,14 @@ class Watcher:
             return
         self.next_at = now + IDLE_PERIOD
         try:
+            if self.setup_in_progress:
+                self.policy.suspend()
+                self.mode, self.title, self.detail = 'setup', 'USB入力を準備中', '初回設定には少し時間がかかります。'
+                return
+            if self.backend is not None and not self.backend.ready and not self.observe_only:
+                self.policy.suspend()
+                self.mode, self.title, self.detail = 'setup', 'USB入力の設定が必要です', self.backend.error
+                return
             if not self.enabled:
                 self.mode, self.title, self.detail = 'paused', 'ひと休み中', 'F8 または下のボタンで、見守りを再開。'
                 return
@@ -202,7 +217,7 @@ class Watcher:
                 return
             if self.target != (hwnd, pid):
                 self.policy.suspend()
-                if not self.observe_only:
+                if not self.observe_only and self.backend is None:
                     s.require_matching_privilege(pid)
                 self.target = (hwnd, pid)
             # Stop keys are handled by the panel; an Esc press simply skips this sample.
@@ -238,7 +253,9 @@ class Watcher:
                 if self.policy.detector.inspect(fresh)['state'] != decision['state']:
                     self.policy.suspend()
                     return
-                if tap_key(hwnd, decision['action']):
+                sent = (tap_key(hwnd, decision['action'], self.backend) if self.backend is not None
+                        else tap_key(hwnd, decision['action']))
+                if sent:
                     self.count += 1
                     self.input_times.append(time.monotonic())
             # Include capture, classification, and key hold in the period budget.
@@ -273,6 +290,7 @@ def main():
             if existing:s.bind(s.U,'PostMessageW',s.W.BOOL,s.W.HWND,s.W.UINT,s.W.WPARAM,s.W.LPARAM)(existing,0x8001,0,0)
             if mutex:s.close_handle(mutex)
             return
+    backend=None
     try:
         C.windll.shell32.SetCurrentProcessExplicitAppUserModelID('godca.GenshinDialogue.Local')
         if not args.preview:(DATA/'stop.flag').unlink(missing_ok=True)
@@ -285,10 +303,16 @@ def main():
             try:settings=json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
             except (OSError,ValueError):pass
         delay=settings.get('notify_after',args.notify_after)
-        watcher=Watcher(delay if delay in (30,60) else 60,sound=bool(settings.get('sound',True)),observe_only=args.observe_only)
+        from hid_input import VirtualKeyboard
+        backend=VirtualKeyboard()
+        if not args.preview and not args.observe_only:
+            backend.try_connect()
+        watcher=Watcher(delay if delay in (30,60) else 60,sound=bool(settings.get('sound',True)),
+                        observe_only=args.observe_only,backend=backend)
         from assist_ui import run
         run(watcher,DATA,args.preview,args.screenshot,args.quit_after)
     finally:
+        if backend is not None:backend.close()
         if mutex:s.close_handle(mutex)
 
 

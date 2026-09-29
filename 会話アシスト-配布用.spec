@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 a = Analysis(
-    ['auto_dialogue.py'],pathex=[],binaries=[],
+    ['auto_dialogue.py'],pathex=[],binaries=[('vendor/libVIIPER.dll','vendor')],
     datas=[('assets/history.png','assets'),('assets/eye.png','assets'),
            ('assets/choice.png','assets'),('assets/attention.wav','assets'),
-           ('assets/dialogue-assist.ico','assets')],
+           ('assets/dialogue-assist.ico','assets'),('vendor/USBip-0.9.8.1-x64.exe','vendor')],
     hiddenimports=[],hookspath=[],hooksconfig={},runtime_hooks=[],
     excludes=['tkinter','matplotlib','IPython','pytest','scipy','torch'],
     noarchive=False,optimize=0,

@@ -4,12 +4,13 @@ import ctypes as C
 import json
 import time
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, QSize
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QWidget, QLabel
 from qfluentwidgets import (PrimaryPushButton, TransparentToolButton, SwitchButton,
-    SegmentedWidget, FluentIcon as FI, setTheme, setThemeColor, Theme, setFont, setCustomStyleSheet)
+    SegmentedWidget, PushButton, FluentIcon as FI, setTheme, setThemeColor, Theme, setFont, setCustomStyleSheet)
 
 import story_clicker as s
 
@@ -81,6 +82,7 @@ class Panel(QWidget):
         self.watcher,self.data,self.preview=watcher,data,preview
         self.previous={key:bool(s.key_state(key)&0x8000) for key in (0x77,0x78)}
         self.drag=None;self.last_view=None;self.closing=False
+        self.setup_pool=None;self.setup_future=None
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.NoFocus)
         self.setFixedSize(490,326)
@@ -89,6 +91,12 @@ class Panel(QWidget):
         self.setStyleSheet('QWidget{font-family:"Yu Gothic UI";}')
 
         self.brand=label(self,'会話アシスト',54,15,180,27,17,INK,QFont.DemiBold)
+        self.setup_button=PushButton('USB設定',self)
+        self.setup_button.setGeometry(271,16,77,27)
+        setFont(self.setup_button,11)
+        self.setup_button.setToolTip('初回のみWindowsに入力用ドライバーを追加します。\n設定中はUSB機器が一時的に再接続されることがあります。\n初回設定後はWindowsを一度再起動してください。自動再起動はしません。')
+        self.setup_button.clicked.connect(self.setup_usb)
+        self.setup_button.setEnabled(not preview and watcher.backend is not None)
         label(self,'原神',360,18,40,22,11,MUTED)
         self.minimize=TransparentToolButton(FI.REMOVE,self)
         self.minimize.setGeometry(405,13,30,30)
@@ -129,7 +137,7 @@ class Panel(QWidget):
         for child in self.delay.items.values():
             child.setFixedSize(79,30);setFont(child,12)
         self.delay.setAccessibleName('停止通知までの時間')
-        label(self,'AI 送信なし',24,300,140,17,10,MUTED)
+        label(self,'v2 · USB入力 · AI 送信なし',24,300,215,17,10,MUTED)
         label(self,'F8  一時停止・再開     /     F9  終了',270,300,208,17,10,MUTED)
         # Controls retain mouse interaction without taking keyboard focus from the game.
         for child in self.findChildren(QWidget):child.setFocusPolicy(Qt.NoFocus)
@@ -217,13 +225,26 @@ class Panel(QWidget):
         else:self.watcher.mode='waiting' if self.watcher.enabled else 'paused'
         self.update_view()
 
+    def setup_usb(self):
+        if self.setup_future is not None or self.preview:return
+        from hid_input import driver_installed, install_driver
+        w=self.watcher
+        w.setup_in_progress=True;w.policy.suspend();w.next_at=0
+        self.setup_button.setEnabled(False);self.toggle_button.setEnabled(False)
+        self.setup_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='usb-setup')
+        def work():
+            w.backend.close()
+            if not driver_installed():install_driver(self.data)
+            w.backend.try_connect()
+        self.setup_future=self.setup_pool.submit(work)
+
     def update_view(self):
         w=self.watcher
         key=(w.mode,w.enabled,w.title,w.detail)
         if key==self.last_view:return
         self.last_view=key
         self.badge.setText({'waiting':'自動検知中','dialogue':'会話送り中',
-            'paused':'自動検知を停止中','attention':'お知らせ'}.get(w.mode,'自動検知中'))
+            'paused':'自動検知を停止中','attention':'お知らせ','setup':'USB入力の準備'}.get(w.mode,'自動検知中'))
         title={'waiting':'次の会話を待機中','dialogue':'会話を送っています',
             'paused':'一時停止しています','attention':'画面をご確認ください'}.get(w.mode,w.title)
         detail={'waiting':'会話が始まると、自動で送ります。',
@@ -232,11 +253,18 @@ class Panel(QWidget):
         if w.title=='原神を待っています':title='原神の起動を待機中'
         if w.title=='見守りを待機しています':title='自動検知を待機中'
         self.heading.setText(title);self.detail.setText(detail)
+        self.detail.setToolTip(w.detail)
         self.toggle_button.setText('一時停止' if w.enabled else '自動検知を再開')
         self.toggle_button.setIcon(FI.PAUSE if w.enabled else FI.PLAY)
         self.book.mode=w.mode;self.book.update();self.update()
 
     def poll(self):
+        if self.setup_future is not None and self.setup_future.done():
+            try:self.setup_future.result()
+            except Exception as exc:self.watcher.backend.error=str(exc)
+            self.setup_pool.shutdown(wait=False);self.setup_pool=None;self.setup_future=None
+            self.watcher.setup_in_progress=False;self.watcher.next_at=0
+            self.setup_button.setEnabled(True);self.toggle_button.setEnabled(True)
         if (self.data/'stop.flag').exists():self.close();return
         if not self.preview:
             for vk in self.previous:
@@ -248,9 +276,15 @@ class Panel(QWidget):
         self.update_view()
 
     def closeEvent(self,event):
+        if self.setup_future is not None:
+            # Let the bounded installer finish before tearing down its keyboard.
+            self.hide()
+            (self.data/'stop.flag').touch()
+            event.ignore();return
         if not self.closing:
             self.closing=True;self.timer.stop()
             self.watcher.enabled=False;self.watcher.mode='closed'
+            if self.watcher.backend is not None:self.watcher.backend.close()
             self.watcher.publish(time.monotonic()+2)
         event.accept()
 

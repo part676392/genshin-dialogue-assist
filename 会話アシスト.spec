@@ -4,8 +4,8 @@
 a = Analysis(
     ['auto_dialogue.py'],
     pathex=[],
-    binaries=[],
-    datas=[('assets/history.png', 'assets'), ('assets/eye.png', 'assets'), ('assets/choice.png', 'assets'), ('assets/attention.wav', 'assets'), ('assets/dialogue-assist.ico', 'assets')],
+    binaries=[('vendor/libVIIPER.dll', 'vendor')],
+    datas=[('assets/history.png', 'assets'), ('assets/eye.png', 'assets'), ('assets/choice.png', 'assets'), ('assets/attention.wav', 'assets'), ('assets/dialogue-assist.ico', 'assets'), ('vendor/USBip-0.9.8.1-x64.exe', 'vendor')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

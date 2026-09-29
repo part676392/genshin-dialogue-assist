@@ -1,0 +1,38 @@
+原神 会話アシスト v2 / Genshin Dialogue Assist v2
+================================================
+
+【はじめ方】
+1. ZIPを右クリック →「すべて展開」。
+2.「会話アシスト.exe」を起動。Windowsの管理者確認を許可。
+3. 初回だけ右上の「USB設定」を押して設定し、Windowsを一度再起動。
+4. アプリと原神を起動。原神を前面にすると会話だけ自動でFを送ります。
+
+F8：一時停止・再開 / F9：終了
+会話送り：F、0.25秒間隔。会話が終わると入力を止めます。
+画面が止まったら30秒・60秒後に通知音。設定はアプリ内で変更できます。
+
+AI・APIキー・Pythonのインストールは不要です。
+初回設定でUSB機器が一時的に再接続されることがあります。
+アプリ自体は未署名です。入力ドライバーには署名済みの上流配布物を同梱しています。
+公式・公認ソフトではなく、BANリスク低下や検知不能は保証しません。
+
+【Quick start】
+1. Right-click the ZIP and choose Extract All.
+2. Open 会話アシスト.exe and approve the Windows administrator prompt.
+3. On first use, click USB設定 (top right), then restart Windows once.
+4. Open this app and Genshin Impact. Keep the game in the foreground.
+
+F8: pause/resume / F9: quit
+Advances recognized dialogue and choices with F at a 0.25-second target interval.
+Stops when dialogue ends. Optional sound after 30 or 60 seconds without progress.
+
+No AI service, API key, or Python installation is needed.
+USB devices may briefly reconnect during first-time driver setup.
+The app is unsigned; the bundled upstream USB driver installer is signed.
+This is unofficial and does not claim reduced account risk or anti-cheat invisibility.
+
+説明・ソース / Documentation and source:
+https://github.com/part676392/genshin-dialogue-assist
+
+更新・v1への復帰 / Updates and original v1:
+https://github.com/part676392/genshin-dialogue-assist/releases

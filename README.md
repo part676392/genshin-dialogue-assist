@@ -4,11 +4,25 @@
 
 A Windows desktop app that detects dialogue in the Japanese Genshin Impact UI using local image processing, then sends **F** while dialogue is visible. The packaged app needs no AI service, API key, or Python installation.
 
+![アプリ画面 / App preview](assets/app-preview.png)
+
 ## ダウンロード / Download
 
-[Releases](https://github.com/part676392/genshin-dialogue-assist/releases) からWindows x64用ZIPを取得し、**すべて展開**して `会話アシスト.exe` を起動します。原神を前面にすると自動検出が始まります。
+[Releases](https://github.com/part676392/genshin-dialogue-assist/releases) から `Genshin-Dialogue-Assist-v2.0.0-windows-x64.zip` を取得します。
 
-Download the Windows x64 ZIP from [Releases](https://github.com/part676392/genshin-dialogue-assist/releases), **extract all files**, and run `会話アシスト.exe`. Bring Genshin Impact to the foreground to enable detection.
+1. ZIPを右クリックして **すべて展開**。`会話アシスト.exe` を起動します。
+2. 初回だけ、右上の **USB設定** を押します。Windowsの管理者確認を許可してください。設定後はWindowsを一度再起動してください。自動では再起動しません。
+3. アプリと原神を起動し、原神を前面にします。会話の検出・入力は自動です。
+
+Download `Genshin-Dialogue-Assist-v2.0.0-windows-x64.zip` from [Releases](https://github.com/part676392/genshin-dialogue-assist/releases).
+
+1. Right-click the ZIP and **Extract All**. Run `会話アシスト.exe`.
+2. On first use, click **USB設定 / USB setup** at the top right and approve the Windows administrator prompt. Restart Windows once after setup; the app never restarts it automatically.
+3. Open the app and Genshin Impact, then keep the game in the foreground. Dialogue detection and input are automatic.
+
+初回設定は、同梱の署名済み `usbip-win2` と必要なVC++ランタイムを導入します。USB機器が一時的に再接続されることがあります。以後の通常動作はローカルのみです。実行ファイル自体にはコード署名がないため、Windowsが発行元不明と表示する場合があります。
+
+First-time setup installs the bundled signed `usbip-win2` package and its VC++ runtime prerequisite. USB devices may briefly reconnect. Normal operation is local. The application EXE itself is unsigned, so Windows may show an unknown-publisher notice.
 
 | 操作 / Action | キー / Key |
 |---|---|
@@ -34,11 +48,27 @@ Input stops when dialogue ends, another app becomes active, or the game is minim
 
 `v1.0.0` archives the original `2026.09.28.4` application. It uses Windows `SendInput`; Windows requests administrator permission to match an elevated game.
 
+## v2 / USB keyboard version
+
+v2は、未改変の **libVIIPER 0.8.1 + usbip-win2 0.9.8.1** で独立した仮想USB HIDキーボードを作ります。USB/IPの待ち受け先は **127.0.0.1のみ**です。入力はFの押下・解放だけで、接続に失敗した際に旧方式へ自動で切り替えることはありません。終了時にキーを解放し、仮想キーボードを切断します。
+
+v2 creates a separate virtual USB HID keyboard with unmodified **libVIIPER 0.8.1 + usbip-win2 0.9.8.1**. The USB/IP listener binds to **127.0.0.1 only**. It sends only F down/up and does not silently fall back to the old transport if connection fails. On exit, it releases the key and disconnects the virtual keyboard.
+
+| バージョン / Version | 入力方式 / Transport | 初回設定 / Setup |
+|---|---|---|
+| [v1.0.0](https://github.com/part676392/genshin-dialogue-assist/releases/tag/v1.0.0) | Windows SendInput | 追加ドライバーなし / No extra driver |
+| [v2.0.0](https://github.com/part676392/genshin-dialogue-assist/releases/tag/v2.0.0) | Virtual USB HID keyboard | 同梱ドライバー / Bundled driver |
+
+Sunshine/MoonlightでのHoYoverse作品の利用報告はありますが、このv2のドライバー構成をHoYoverseが承認した証拠はありません。物理USB機器と識別不能にする実装ではありません。調査の出典と区別は [入力方式の調査 / Input research](docs/INPUT_RESEARCH.md)、検証範囲は [検証結果 / Validation](docs/VALIDATION.md) に記載しています。
+
+Community reports show HoYoverse games being played through Sunshine/Moonlight, but they do not establish HoYoverse approval of this v2 driver stack. This implementation does not make a virtual device indistinguishable from physical hardware. See [Input research](docs/INPUT_RESEARCH.md) for sources and [Validation](docs/VALIDATION.md) for the actual test scope.
+
 ## 開発 / Development
 
 ```powershell
-py -3.11 -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe tools/fetch_vendor.py
 .\.venv\Scripts\python.exe -m unittest discover -v
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --distpath dist 会話アシスト-配布用.spec
 ```
@@ -50,6 +80,16 @@ Private gameplay regression screenshots are excluded from the repository. To run
 設定と状態は `%LOCALAPPDATA%\GenshinDialogue` に保存されます。公開ZIPへ個人設定を同梱しないでください。
 
 Settings and status live in `%LOCALAPPDATA%\GenshinDialogue`. Do not include your personal settings in redistributed ZIPs.
+
+`--observe-only` は検出だけ、`--preview` はUIの確認だけを行います。開発者向けの `tools/probe_keyboard.py <result.json>` は専用画面に12回だけFを送り、Raw Input受信を確認します。テスト画面からフォーカスが外れると中止します。
+
+`--observe-only` detects without input; `--preview` displays only the UI. For developers, `tools/probe_keyboard.py <result.json>` sends 12 F taps to its own test window and checks Raw Input reception. It aborts if that window loses focus.
+
+## 削除 / Uninstall
+
+アプリを終了して展開フォルダーを削除します。ドライバーも不要になった場合は、Windowsの「インストールされているアプリ」で **USBip** をアンインストールしてください。他のUSB/IP利用アプリで使っている場合は残してください。
+
+Quit the app and delete its extracted folder. If no other application needs USB/IP, uninstall **USBip** through Windows Installed Apps. Keep the shared driver if another application uses it.
 
 ## ライセンス / License
 
