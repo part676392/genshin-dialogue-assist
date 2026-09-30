@@ -1,4 +1,4 @@
-原神 会話アシスト v2 / Genshin Dialogue Assist v2
+原神 会話アシスト v2.0.1 / Genshin Dialogue Assist v2.0.1
 ================================================
 
 【はじめ方】

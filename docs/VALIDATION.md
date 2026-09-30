@@ -2,7 +2,30 @@
 
 検証日 / Date: **2026-09-30**
 
-## 確認済み / Verified
+## v2.0.1 再接続修正 / Reconnection fix
+
+v2.0.0で同じプロセスの接続→切断→接続を試すと、1回目だけ成功し、2・3回目は「仮想USBバスを作成できませんでした」となる現象を再現しました。libVIIPER 0.8.1のCloseUSBServerはバスの割り当てを即時に解放しないため、RemoveUSBBusを明示的に呼ぶよう修正しました。
+
+In v2.0.0, a same-process connect/close/connect sequence succeeded once and failed on the second and third attempts with “Cannot create virtual USB bus.” Because libVIIPER 0.8.1 CloseUSBServer does not immediately release bus allocations, v2.0.1 explicitly calls RemoveUSBBus during teardown.
+
+- 同じ実DLL・同じプロセスで5回の接続・切断に成功。 / Five consecutive connect/close cycles passed using the real DLL in one process.
+- 実UIのUSB設定ボタンから3回の再接続に成功。キー送信数は0。 / Three reconnections through the actual UI setup button passed with zero key inputs.
+- 30件のテスト成功（実ドライバーの再接続テスト1件を含む）。 / 30 tests passed, including one real-driver reconnection test.
+- 接続途中の失敗でも作成済みのバスを解放し、作成できていないバスを削除しないことを確認。 / Failed setup releases its owned bus without deleting a bus it did not create.
+
+再現コマンド / Reproduction checks:
+
+```powershell
+$env:GENSHIN_TEST_USB='1'
+.\.venv\Scripts\python.exe -m unittest test_hid_input -v
+.\.venv\Scripts\python.exe tools/probe_usb_setup.py setup-result.json
+```
+
+実ドライバーテストは一時的な仮想キーボードの接続だけを行い、Fは送信しません。ゲーム画像の回帰テストには別途非公開fixturesが必要です。
+
+The real-driver checks connect temporary virtual keyboards but send no F input. Gameplay-image regression tests additionally require the private fixtures.
+
+## v2.0.0で確認した範囲 / Original v2.0.0 verification
 
 - Windows 11 x64、Python 3.13.3、libVIIPER 0.8.1、usbip-win2 0.9.8.1。 / Windows 11 x64, Python 3.13.3, libVIIPER 0.8.1, usbip-win2 0.9.8.1.
 - 同梱USBipインストーラーのSHA-256一致とWindows Authenticode署名Validを確認。通常のWindows管理者起動で導入。 / Verified pinned SHA-256 and a valid Authenticode signature; installed through standard Windows elevation.

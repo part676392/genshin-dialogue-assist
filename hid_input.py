@@ -60,6 +60,7 @@ class VirtualKeyboard:
         self.error = ''
         self._log_callback = None
         self._messages = []
+        self._bus_created = False
 
     def connect(self):
         with self.lock:
@@ -75,6 +76,7 @@ class VirtualKeyboard:
                 signatures = {
                     'NewUSBServer': [C.POINTER(USBServerConfig), C.POINTER(C.c_size_t), C.c_void_p],
                     'CreateUSBBus': [C.c_size_t, C.POINTER(C.c_uint32)],
+                    'RemoveUSBBus': [C.c_size_t, C.c_uint32],
                     'CreateKeyboardDevice': [C.c_size_t, C.POINTER(C.c_size_t), C.c_uint32,
                                              C.c_bool, C.c_uint16, C.c_uint16],
                     'SetKeyboardDeviceState': [C.c_size_t, KeyboardState],
@@ -89,7 +91,10 @@ class VirtualKeyboard:
                 if level >= 4:
                     self._messages.append((message or b'').decode('utf-8', errors='replace'))
                     self._messages[:] = self._messages[-8:]
-            self._log_callback = callback_type(record)
+            # Keep the same callback alive across reconnects: the previous
+            # server's shutdown goroutine can log after CloseUSBServer returns.
+            if self._log_callback is None:
+                self._log_callback = callback_type(record)
             # Port 0 allocates an unused port. Native auto-attach uses that actual port.
             config = USBServerConfig(b'127.0.0.1:0', 30000, 5000, 1)
             try:
@@ -97,6 +102,7 @@ class VirtualKeyboard:
                     raise RuntimeError('ローカル入力サーバーを起動できませんでした。')
                 if not self.lib.CreateUSBBus(self.server, C.byref(self.bus)):
                     raise RuntimeError('仮想USBバスを作成できませんでした。')
+                self._bus_created = True
                 # Keep upstream's default identifiers; do not impersonate an installed device.
                 if not self.lib.CreateKeyboardDevice(self.server, C.byref(self.device),
                         self.bus, True, 0, 0):
@@ -157,12 +163,22 @@ class VirtualKeyboard:
                         self.device = C.c_size_t()
             if self.server.value:
                 try:
-                    self.lib.CloseUSBServer(self.server)
+                    # libVIIPER 0.8.1 CloseUSBServer closes only the listener.
+                    # Release the process-wide bus allocation explicitly first,
+                    # including a bus whose keyboard failed to auto-attach.
+                    if self._bus_created:
+                        self.lib.RemoveUSBBus(self.server, self.bus)
                 except Exception as exc:
                     errors.append(str(exc))
                 finally:
-                    self.server = C.c_size_t()
-                    self.bus = C.c_uint32()
+                    try:
+                        self.lib.CloseUSBServer(self.server)
+                    except Exception as exc:
+                        errors.append(str(exc))
+                    finally:
+                        self.server = C.c_size_t()
+                        self.bus = C.c_uint32()
+                        self._bus_created = False
             if errors:
                 self.error = '; '.join(errors)
 

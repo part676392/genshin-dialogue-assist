@@ -8,13 +8,13 @@ A Windows desktop app that detects dialogue in the Japanese Genshin Impact UI us
 
 ## ダウンロード / Download
 
-[Releases](https://github.com/part676392/genshin-dialogue-assist/releases) から `Genshin-Dialogue-Assist-v2.0.0-windows-x64.zip` を取得します。
+[Releases](https://github.com/part676392/genshin-dialogue-assist/releases) から `Genshin-Dialogue-Assist-v2.0.1-windows-x64.zip` を取得します。
 
 1. ZIPを右クリックして **すべて展開**。`会話アシスト.exe` を起動します。
 2. 初回だけ、右上の **USB設定** を押します。Windowsの管理者確認を許可してください。設定後はWindowsを一度再起動してください。自動では再起動しません。
 3. アプリと原神を起動し、原神を前面にします。会話の検出・入力は自動です。
 
-Download `Genshin-Dialogue-Assist-v2.0.0-windows-x64.zip` from [Releases](https://github.com/part676392/genshin-dialogue-assist/releases).
+Download `Genshin-Dialogue-Assist-v2.0.1-windows-x64.zip` from [Releases](https://github.com/part676392/genshin-dialogue-assist/releases).
 
 1. Right-click the ZIP and **Extract All**. Run `会話アシスト.exe`.
 2. On first use, click **USB設定 / USB setup** at the top right and approve the Windows administrator prompt. Restart Windows once after setup; the app never restarts it automatically.
@@ -57,7 +57,11 @@ v2 creates a separate virtual USB HID keyboard with unmodified **libVIIPER 0.8.1
 | バージョン / Version | 入力方式 / Transport | 初回設定 / Setup |
 |---|---|---|
 | [v1.0.0](https://github.com/part676392/genshin-dialogue-assist/releases/tag/v1.0.0) | Windows SendInput | 追加ドライバーなし / No extra driver |
-| [v2.0.0](https://github.com/part676392/genshin-dialogue-assist/releases/tag/v2.0.0) | Virtual USB HID keyboard | 同梱ドライバー / Bundled driver |
+| [v2.0.1](https://github.com/part676392/genshin-dialogue-assist/releases/tag/v2.0.1) | Virtual USB HID keyboard | 同梱ドライバー / Bundled driver |
+
+**v2.0.1の修正:** v2.0.0では「USB設定」で再接続すると、仮想USBバスの解放漏れにより「仮想USBバスを作成できませんでした」と表示される不具合がありました。管理者権限の問題ではなく、v2.0.1で切断処理を修正しました。画面左下のバージョンで確認できます。
+
+**v2.0.1 fix:** v2.0.0 could fail with “Cannot create virtual USB bus” after reconnecting through USB setup because a bus allocation was not released. This was a teardown bug, not an administrator-permission issue. v2.0.1 fixes cleanup and displays the exact version at the bottom left.
 
 Sunshine/MoonlightでのHoYoverse作品の利用報告はありますが、このv2のドライバー構成をHoYoverseが承認した証拠はありません。物理USB機器と識別不能にする実装ではありません。調査の出典と区別は [入力方式の調査 / Input research](docs/INPUT_RESEARCH.md)、検証範囲は [検証結果 / Validation](docs/VALIDATION.md) に記載しています。
 

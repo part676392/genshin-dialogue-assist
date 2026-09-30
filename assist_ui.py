@@ -137,7 +137,7 @@ class Panel(QWidget):
         for child in self.delay.items.values():
             child.setFixedSize(79,30);setFont(child,12)
         self.delay.setAccessibleName('停止通知までの時間')
-        label(self,'v2 · USB入力 · AI 送信なし',24,300,215,17,10,MUTED)
+        label(self,f'v{watcher.version} · USB入力 · AI 送信なし',24,300,235,17,10,MUTED)
         label(self,'F8  一時停止・再開     /     F9  終了',270,300,208,17,10,MUTED)
         # Controls retain mouse interaction without taking keyboard focus from the game.
         for child in self.findChildren(QWidget):child.setFocusPolicy(Qt.NoFocus)

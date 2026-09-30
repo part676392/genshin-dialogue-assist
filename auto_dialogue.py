@@ -19,7 +19,7 @@ import story_clicker as s
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ['LOCALAPPDATA']) / 'GenshinDialogue'
 TITLE = '原神 会話アシスト'
-VERSION = '2.0.0'
+VERSION = '2.0.1'
 # Explicit user setting after trying 500 ms and reporting it too slow.
 # A 250 ms target is not a measured game minimum or an evasion claim.
 TAP_PERIOD = .250
@@ -152,6 +152,7 @@ class Watcher:
         self.input_times = deque(maxlen=40)
         self.pause_reason = None
         self.backend = backend
+        self.version = VERSION
         self.setup_in_progress = False
 
     def toggle(self, reason='button'):

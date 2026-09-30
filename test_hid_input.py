@@ -1,5 +1,6 @@
 """USB transport cleanup and input-isolation tests; no driver or game needed."""
 import ctypes as C
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,9 @@ class FakeLibrary:
         self.closed=[]
         self.fail_release=False
         self.raise_remove=False
+        self.allocated_buses=set()
+        self.removed_buses=[]
+        self.fail_create_bus=False
 
     def NewUSBServer(self, config, out, callback):
         self.address=C.cast(config,C.POINTER(h.USBServerConfig)).contents.addr
@@ -26,6 +30,13 @@ class FakeLibrary:
 
     def CreateUSBBus(self, server, out):
         C.cast(out,C.POINTER(C.c_uint32))[0]=1
+        if self.fail_create_bus or 1 in self.allocated_buses:return False
+        self.allocated_buses.add(1)
+        return True
+
+    def RemoveUSBBus(self, server, bus):
+        self.removed_buses.append(bus.value)
+        self.allocated_buses.remove(bus.value)
         return True
 
     def CreateKeyboardDevice(self, server, out, bus, attach, vid, pid):
@@ -80,6 +91,7 @@ class TransportTests(unittest.TestCase):
         self.keyboard.close();self.keyboard.close()
         self.assertEqual(self.lib.closed,[10])
         self.assertEqual(self.lib.removed,[20])
+        self.assertEqual(self.lib.removed_buses,[1])
 
     def test_device_failure_also_closes_server(self):
         self.keyboard.close()
@@ -87,6 +99,42 @@ class TransportTests(unittest.TestCase):
         self.assertFalse(self.keyboard.try_connect())
         self.assertFalse(self.keyboard.ready)
         self.assertEqual(self.lib.closed,[10,10])
+        self.assertEqual(self.lib.allocated_buses,set())
+
+    def test_reconnect_releases_bus_in_same_library(self):
+        callback=self.keyboard._log_callback
+        for _ in range(4):
+            self.keyboard.close()
+            self.assertEqual(self.lib.allocated_buses,set())
+            self.assertTrue(self.keyboard.try_connect(),self.keyboard.error)
+            self.assertIs(self.keyboard._log_callback,callback)
+
+    def test_failed_keyboard_attach_then_retry_recovers(self):
+        self.keyboard.close()
+        with patch.object(self.lib,'CreateKeyboardDevice',return_value=False):
+            self.assertFalse(self.keyboard.try_connect())
+        self.assertEqual(self.lib.allocated_buses,set())
+        self.assertTrue(self.keyboard.try_connect(),self.keyboard.error)
+
+    def test_failed_bus_creation_does_not_remove_unowned_bus(self):
+        self.keyboard.close()
+        self.lib.removed_buses.clear();self.lib.fail_create_bus=True
+        self.assertFalse(self.keyboard.try_connect())
+        self.assertEqual(self.lib.removed_buses,[])
+
+
+@unittest.skipUnless(os.environ.get('GENSHIN_TEST_USB')=='1',
+                     'Set GENSHIN_TEST_USB=1 for real driver reconnect checks; no keys sent')
+class NativeReconnectTests(unittest.TestCase):
+    def test_same_loaded_dll_reconnects_five_times(self):
+        keyboard=h.VirtualKeyboard()
+        self.addCleanup(keyboard.close)
+        for attempt in range(5):
+            with self.subTest(attempt=attempt):
+                self.assertTrue(keyboard.try_connect(),keyboard.error)
+                self.assertTrue(keyboard.ready)
+                keyboard.close()
+                self.assertFalse(keyboard.ready)
 
 
 class RoutingTests(unittest.TestCase):
