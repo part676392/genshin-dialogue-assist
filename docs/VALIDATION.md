@@ -2,6 +2,13 @@
 
 検証日 / Date: **2026-10-09**
 
+## v3.0.1 画面取得の点滅・送信表示 / Capture flicker and dispatch display
+
+- ユーザーが待機中の約0.5秒ごとの点滅を報告。アプリ終了とUSB切断後に「止まった」と回答。最新v3.0.0プロセスの送信記録は起動から0回であり、点滅をF送信と断定しない。 / The user reported roughly half-second flicker while waiting and confirmed it stopped after application shutdown. The latest process recorded zero F dispatches since launch; flicker is not treated as proof of key dispatch.
+- mss 10.2.0のCAPTUREBLTをプロセス内で無効化。Windows設定やインストール済みライブラリのファイルは変更しない。関連報告: [python-mss #179](https://github.com/BoboTiG/python-mss/issues/179)。 / Disabled CAPTUREBLT in the process's pinned mss backend without changing Windows settings or installed package files.
+- 修正後の実ゲーム画面取得10回、約5秒、全BitBltのROP=13369376（SRCCOPYのみ）。USBを作らずF送信0。ユーザーが「チカチカは出なかった」と確認。取得時間57.88～76.56ms。長時間・全画面設定の無点滅を保証する試験ではない。 / Ten live captures over roughly five seconds used SRCCOPY exclusively, with no USB backend or F input. The user confirmed no flicker during that bounded check; capture times were 57.88–76.56 ms. This is not an exhaustive long-duration or display-mode validation.
+- 回帰41件中40件成功、実DLL再接続1件skip（同セッションで変更前に5回成功済み）。UIの送信停止表示・累計・入力前描画・停止操作時の送信拒否を確認。 / 40 of 41 tests passed; the unchanged real-DLL reconnect test was skipped after passing five cycles earlier. Checks cover explicit waiting indication, counters, pre-input painting and dispatch rejection when paused during UI update.
+
 ## v3.0.0 入力間隔UI・待機中の送信禁止 / Timing UI and waiting gate
 
 - 「一定」の350～500msスライダー、「ランダム」の送信ごとの350～500ms選択、設定保存・読戻しを実UIで確認。350/425/500msとモード切り替えを検証し、テストのF送信数は0。 / The real UI verified fixed slider values 350/425/500 ms, per-dispatch random intervals within 350–500 ms, mode switching, settings persistence and restoration, with zero test key inputs.

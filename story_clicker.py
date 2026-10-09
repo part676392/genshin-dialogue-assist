@@ -16,6 +16,13 @@ import cv2
 import numpy as np
 from PIL import Image, ImageGrab
 from mss import mss
+from mss.windows import gdi as mss_gdi
+
+# CAPTUREBLT can make fullscreen games/cursors flicker at every sample
+# (python-mss issue #179). Plain SRCCOPY still reads the screen without
+# requesting layered-window composition. This changes only this process's
+# pinned mss 10.2.0 backend; it does not change Windows or installed packages.
+mss_gdi.CAPTUREBLT = 0
 
 BASE = Path(__file__).resolve().parent
 ASSETS = BASE / "assets"

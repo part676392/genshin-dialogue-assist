@@ -20,7 +20,7 @@ import story_clicker as s
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ['LOCALAPPDATA']) / 'GenshinDialogue'
 TITLE = '原神 会話アシスト'
-VERSION = '3.0.0'
+VERSION = '3.0.1'
 # User-selected timing range; not a measured game minimum or an evasion claim.
 MIN_INTERVAL_MS = 350
 MAX_INTERVAL_MS = 500
@@ -164,6 +164,8 @@ class Watcher:
         self.configure_timing(interval_ms,random_timing)
         self.last_interval_ms = self.interval_ms
         self.input_due_at = 0
+        self.before_input = None
+        self.last_input_at = None
 
     def configure_timing(self, interval_ms, random_timing):
         if type(interval_ms) is not int or not MIN_INTERVAL_MS <= interval_ms <= MAX_INTERVAL_MS:
@@ -199,7 +201,7 @@ class Watcher:
                     input_backend=self.backend.kind if self.backend else 'sendinput',
                     input_ready=self.backend.ready if self.backend else True,
                     input_error=self.backend.error if self.backend else '',
-                    last_detection=self.policy.last_detection)
+                    last_detection=self.policy.last_detection,last_input_at=self.last_input_at)
 
     def publish(self, now):
         if self.mode != self.last_mode:
@@ -270,6 +272,11 @@ class Watcher:
             else:
                 self.mode, self.title, self.detail = 'waiting', '会話を待っています', '探索や戦闘はそのまま。次の会話で再開します。'
             if decision['action'] and self.mode == 'dialogue' and not self.observe_only:
+                # Paint the authorized state before sending, so the previous
+                # "waiting" label cannot remain on screen during a first tap.
+                if self.before_input is not None and not self.before_input():
+                    self.policy.suspend()
+                    return
                 # Reobserve immediately before every input, including transitions.
                 fresh = s.capture(hwnd)
                 if s.foreground() != hwnd or s.game_window() != (hwnd,pid):
@@ -278,9 +285,14 @@ class Watcher:
                 # Both dialogue and choices use F. Recheck the dialogue controls
                 # without repeating the expensive choice search or rejecting a
                 # valid transition from a caption to a choice.
-                if self.policy.detector.inspect(fresh,detect_choice=False)['state'] not in ('dialogue','choice'):
+                checked = self.policy.detector.inspect(fresh,detect_choice=False)
+                self.policy.last_detection = checked
+                if checked['state'] not in ('dialogue','choice'):
                     self.policy.suspend()
                     self.mode, self.title, self.detail = 'waiting', '会話を待っています', '次の会話で自動的に再開します。'
+                    return
+                # A UI callback may pause the watcher; check again at dispatch.
+                if not self.enabled or self.mode != 'dialogue' or self.setup_in_progress:
                     return
                 input_started=time.monotonic()
                 if input_started < self.input_due_at:
@@ -290,6 +302,9 @@ class Watcher:
                         else tap_key(hwnd, decision['action']))
                 if sent:
                     self.count += 1
+                    self.last_input_at=time.strftime('%H:%M:%S')
+                    self.events.append(dict(at=self.last_input_at,input='F',inputs=self.count,
+                                            mode=self.mode,detection=checked))
                     self.input_times.append(time.monotonic())
                     self.input_due_at=input_started+self.input_period()
             # Include capture, classification, and key hold in the period budget.

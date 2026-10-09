@@ -85,7 +85,7 @@ class Panel(QWidget):
         self.setup_pool=None;self.setup_future=None
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.NoFocus)
-        self.setFixedSize(490,420)
+        self.setFixedSize(490,442)
         self.setWindowTitle('原神 会話アシスト')
         self.setWindowIcon(QIcon(str(Path(__file__).parent/'assets'/'dialogue-assist.ico')))
         self.setStyleSheet('QWidget{font-family:"Yu Gothic UI";}')
@@ -107,11 +107,12 @@ class Panel(QWidget):
         self.close_button.setAccessibleName('終了（F9）')
         self.close_button.clicked.connect(self.close)
 
-        self.badge=label(self,'自動検知中',49,72,200,22,11,GREEN,QFont.DemiBold)
+        self.badge=label(self,'会話を探しています · F送信停止',49,72,310,22,11,GREEN,QFont.DemiBold)
         self.heading=label(self,'次の会話を待機中',34,102,328,32,22,INK,QFont.DemiBold)
         self.detail=label(self,'会話が始まると、自動で送ります。',35,143,313,35,12,MUTED)
         self.detail.setWordWrap(True);self.detail.setAlignment(Qt.AlignTop|Qt.AlignLeft)
         self.book=Book(self);self.book.setGeometry(353,79,112,100)
+        self.input_state=label(self,'F送信停止 · 累計 0 回',24,185,440,20,11,MUTED)
 
         self.toggle_button=PrimaryPushButton(FI.PAUSE,'一時停止',self)
         self.toggle_button.setGeometry(20,201,292,40)
@@ -159,6 +160,11 @@ class Panel(QWidget):
         self.refresh_timing()
         label(self,f'v{watcher.version} · USB入力 · AI 送信なし',24,394,235,17,10,MUTED)
         label(self,'F8  一時停止・再開     /     F9  終了',270,394,208,17,10,MUTED)
+        # Give the explicit input indicator its own row below the card.
+        for child in self.findChildren(QWidget,options=Qt.FindDirectChildrenOnly):
+            if child is not self.input_state and child.y() >= 201:
+                child.move(child.x(),child.y()+22)
+        watcher.before_input=self.prepare_input
         # Controls retain mouse interaction without taking keyboard focus from the game.
         for child in self.findChildren(QWidget):child.setFocusPolicy(Qt.NoFocus)
         self.timer=QTimer(self);self.timer.setTimerType(Qt.PreciseTimer)
@@ -184,7 +190,7 @@ class Panel(QWidget):
         mode=self.watcher.mode
         color='#a6603d' if mode=='attention' else MUTED if not self.watcher.enabled else GREEN
         p.setPen(Qt.NoPen);p.setBrush(QColor(color));p.drawEllipse(QRectF(35,81,5,5))
-        p.setPen(QPen(QColor(LINE),1));p.drawLine(24,294,466,294)
+        p.setPen(QPen(QColor(LINE),1));p.drawLine(24,316,466,316)
 
     def show_quietly(self):
         before=native_snapshot()
@@ -277,14 +283,17 @@ class Panel(QWidget):
 
     def update_view(self):
         w=self.watcher
+        sending=w.enabled and w.mode=='dialogue' and not w.observe_only
+        self.input_state.setText(f'F送信対象 · 累計 {w.count} 回 · 最終 {w.last_input_at or "なし"}' if sending
+                                else f'F送信停止 · 累計 {w.count} 回 · 最終 {w.last_input_at or "なし"}')
         key=(w.mode,w.enabled,w.title,w.detail)
         if key==self.last_view:return
         self.last_view=key
-        self.badge.setText({'waiting':'自動検知中','dialogue':'会話送り中',
+        self.badge.setText({'waiting':'会話を探しています · F送信停止','dialogue':'会話を検知しました',
             'paused':'自動検知を停止中','attention':'お知らせ','setup':'USB入力の準備'}.get(w.mode,'自動検知中'))
         title={'waiting':'次の会話を待機中','dialogue':'会話を送っています',
             'paused':'一時停止しています','attention':'画面をご確認ください'}.get(w.mode,w.title)
-        detail={'waiting':'会話が始まると、自動で送ります。',
+        detail={'waiting':'会話を確認できるまで、Fは送りません。',
                 'dialogue':'会話が終わると、自動で入力を止めます。',
                 'paused':'再開すると、会話の自動検知に戻ります。'}.get(w.mode,w.detail)
         if w.title=='原神を待っています':title='原神の起動を待機中'
@@ -294,6 +303,14 @@ class Panel(QWidget):
         self.toggle_button.setText('一時停止' if w.enabled else '自動検知を再開')
         self.toggle_button.setIcon(FI.PAUSE if w.enabled else FI.PLAY)
         self.book.mode=w.mode;self.book.update();self.update()
+
+    def prepare_input(self):
+        w=self.watcher
+        if self.closing or not w.enabled or w.mode!='dialogue' or w.setup_in_progress:
+            return False
+        self.update_view()
+        self.repaint()
+        return True
 
     def poll(self):
         if self.setup_future is not None and self.setup_future.done():

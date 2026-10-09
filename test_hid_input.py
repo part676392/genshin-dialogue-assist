@@ -164,6 +164,38 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(self.w.count,1)
         for mock in self.m[8:]:mock.assert_not_called()
 
+    def test_ui_must_acknowledge_dialogue_before_usb_dispatch(self):
+        self.w.before_input=Mock(return_value=False)
+        self.w.tick()
+        self.w.before_input.assert_called_once()
+        self.backend.tap_f.assert_not_called()
+        self.assertEqual(self.w.count,0)
+
+    def test_pause_during_ui_update_blocks_usb_dispatch(self):
+        def pause():
+            self.w.toggle()
+            return True
+        self.w.before_input=pause
+        self.w.tick()
+        self.backend.tap_f.assert_not_called()
+
+    def test_latest_detection_and_each_sent_key_are_recorded(self):
+        checked=dict(state='choice',history=.99,eye=.98)
+        self.w.policy.detector.inspect.return_value=checked
+        self.w.tick()
+        self.assertEqual(self.w.policy.last_detection,checked)
+        sent=[event for event in self.w.events if event.get('input')=='F']
+        self.assertEqual(len(sent),1)
+        self.assertEqual(sent[0]['mode'],'dialogue')
+        self.assertEqual(sent[0]['detection'],checked)
+
+    def test_fresh_unknown_replaces_old_dialogue_and_stops_usb(self):
+        self.w.policy.detector.inspect.return_value=dict(state='unknown')
+        self.w.tick()
+        self.backend.tap_f.assert_not_called()
+        self.assertEqual(self.w.mode,'waiting')
+        self.assertEqual(self.w.policy.last_detection,dict(state='unknown'))
+
     def test_early_dispatch_is_blocked_even_when_processing_time_changes(self):
         self.w.input_due_at=101.0
         with patch.object(a.time,'monotonic',return_value=100.9):

@@ -44,9 +44,9 @@ Input stops when dialogue ends, another app becomes active, or the game is minim
 
 ## 入力間隔 / Input interval
 
-v3.0.0の「入力間隔」は「一定」と「ランダム」を切り替えられます。「一定」ではスライダーで350～500msを1ms単位で設定できます。「ランダム」では送信ごとに350～500msから間隔を選び、この間は固定値用のスライダーを無効にします。初期設定はランダムで、選んだ設定を次回起動にも引き継ぎます。処理負荷や画面遷移によって実際の送信間隔は長くなることがあります。ランダム化による検知回避は保証しません。
+v3.0.1の「入力間隔」は「一定」と「ランダム」を切り替えられます。「一定」ではスライダーで350～500msを1ms単位で設定できます。「ランダム」では送信ごとに350～500msから間隔を選び、この間は固定値用のスライダーを無効にします。初期設定はランダムで、選んだ設定を次回起動にも引き継ぎます。処理負荷や画面遷移によって実際の送信間隔は長くなることがあります。ランダム化による検知回避は保証しません。
 
-v3.0.0 lets you select Fixed or Random under Input interval. Fixed uses a slider from 350 to 500 ms in 1 ms steps. Random samples a new interval between 350 and 500 ms for each dispatch and disables the fixed-value slider. Random is the initial mode, and settings persist across launches. Processing load and screen transitions may lengthen actual dispatch intervals. Randomization does not establish detection avoidance.
+v3.0.1 lets you select Fixed or Random under Input interval. Fixed uses a slider from 350 to 500 ms in 1 ms steps. Random samples a new interval between 350 and 500 ms for each dispatch and disables the fixed-value slider. Random is the initial mode, and settings persist across launches. Processing load and screen transitions may lengthen actual dispatch intervals. Randomization does not establish detection avoidance.
 
 「会話待機中」にはFを送りません。会話または選択肢を連続確認し、送信直前も会話コントロールがある場合だけ送ります。送信前に会話が消えた場合、入力を取り消して待機表示へ戻ります。押下後のキー解放は必ず行います。
 
@@ -110,3 +110,9 @@ Quit the app and delete its extracted folder. If no other application needs USB/
 アプリのコードはGPL-3.0です。依存ソフト・ゲームのUI素材の権利はそれぞれの権利者に帰属します。[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
 
 Application code is licensed under GPL-3.0. Dependencies and game UI material retain their respective licenses and ownership. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## v3.0.1 待機時の点滅修正 / Waiting flicker fix
+
+画面取得のCAPTUREBLTを無効にし、SRCCOPYのみを使用します。F送信0回でも画面取得が点滅を起こす可能性を、入力の不具合と分けて扱います。待機表示は「会話を探しています · F送信停止」で、累計送信回数と最終送信時刻も表示します。入力前に表示を更新し、その後に会話コントロールと送信許可を再確認します。
+
+Screen capture uses SRCCOPY without CAPTUREBLT, addressing the fullscreen flicker reported in [python-mss issue #179](https://github.com/BoboTiG/python-mss/issues/179). Waiting explicitly displays that F dispatch is stopped, with a cumulative dispatch counter and last dispatch time. The panel is painted before input, followed by a fresh dialogue-control and authorization check.
