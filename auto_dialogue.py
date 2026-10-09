@@ -9,6 +9,7 @@ import os
 import random
 from pathlib import Path
 import sys
+sys.dont_write_bytecode = True
 import time
 
 import winsound
@@ -20,7 +21,7 @@ import story_clicker as s
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ['LOCALAPPDATA']) / 'GenshinDialogue'
 TITLE = '原神 会話アシスト'
-VERSION = '3.0.1'
+VERSION = '3.1.0'
 # User-selected timing range; not a measured game minimum or an evasion claim.
 MIN_INTERVAL_MS = 350
 MAX_INTERVAL_MS = 500
@@ -28,13 +29,16 @@ DEFAULT_INTERVAL_MS = 425
 TAP_PERIOD = DEFAULT_INTERVAL_MS/1000
 KEY_HOLD = .025
 IDLE_PERIOD = .150
+INACTIVE_PERIOD = .500
+MAX_FRESH_AGE = .250
+STATUS_HEARTBEAT = 30
 
 
 def signature(frame, dialogue=False):
     box = (240,400,1820,990) if dialogue else (70,100,1830,1000)
     xscale, yscale = frame.width/1920, frame.height/1080
     source = (box[0]*xscale,box[1]*yscale,box[2]*xscale,box[3]*yscale)
-    return np.asarray(frame.convert('L').resize((160,90),box=source),dtype=np.int16)
+    return np.asarray(frame.resize((160,90),box=source).convert('L'),dtype=np.int16)
 
 
 def caption_signature(frame):
@@ -150,8 +154,9 @@ class Watcher:
         self.mode, self.count, self.alerts = 'waiting', 0, 0
         self.next_at = 0
         self.target = None
-        self.events = deque(maxlen=120)
+        self.events = deque(maxlen=32)
         self.last_snapshot = 0
+        self.last_published_state = None
         self.last_mode = None
         self.input_times = deque(maxlen=40)
         self.pause_reason = None
@@ -183,6 +188,7 @@ class Watcher:
         self.events.append(dict(at=time.strftime('%H:%M:%S'),control=reason,enabled=self.enabled))
         self.policy.suspend()
         self.next_at = 0
+        if not self.enabled:s.close_capture()
 
     def status(self):
         times=[stamp for stamp in self.input_times if time.monotonic()-stamp<=5]
@@ -207,12 +213,18 @@ class Watcher:
         if self.mode != self.last_mode:
             self.events.append(dict(at=time.strftime('%H:%M:%S'), mode=self.mode, inputs=self.count))
             self.last_mode = self.mode
-        if now - self.last_snapshot >= 1:
+        milestone=(self.enabled,self.mode,self.count,self.alerts,self.sound,
+                   self.policy.notify_after,self.interval_ms,self.random_timing,
+                   self.backend.ready if self.backend else True,
+                   self.backend.error if self.backend else '')
+        changed_state=milestone != self.last_published_state
+        if (changed_state and now-self.last_snapshot>=1) or now-self.last_snapshot>=STATUS_HEARTBEAT:
             DATA.mkdir(parents=True, exist_ok=True)
             temp = DATA/'status.tmp'
             temp.write_text(json.dumps(self.status(), ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(DATA/'status.json')
             self.last_snapshot = now
+            self.last_published_state = milestone
 
     def tick(self):
         now = time.monotonic()
@@ -220,6 +232,14 @@ class Watcher:
             return
         self.next_at = now + IDLE_PERIOD
         try:
+            if not self.enabled:
+                self.policy.suspend()
+                s.close_capture()
+                if self.backend is not None and self.backend.ready:
+                    self.backend.close()
+                self.next_at=now+INACTIVE_PERIOD
+                self.mode, self.title, self.detail = 'paused', 'ひと休み中', 'F8 または下のボタンで、見守りを再開。'
+                return
             if self.setup_in_progress:
                 self.policy.suspend()
                 self.mode, self.title, self.detail = 'setup', 'USB入力を準備中', '初回設定には少し時間がかかります。'
@@ -228,18 +248,17 @@ class Watcher:
                 self.policy.suspend()
                 self.mode, self.title, self.detail = 'setup', 'USB入力の設定が必要です', self.backend.error
                 return
-            if not self.enabled:
-                self.mode, self.title, self.detail = 'paused', 'ひと休み中', 'F8 または下のボタンで、見守りを再開。'
-                return
             try:
                 hwnd, pid = s.game_window()
             except RuntimeError:
                 self.policy.suspend()
+                s.close_capture();self.next_at=now+INACTIVE_PERIOD
                 self.target = None
                 self.mode, self.title, self.detail = 'waiting', '原神を待っています', '原神を開くと、会話の見守りが始まります。'
                 return
             if s.foreground() != hwnd or s.is_iconic(hwnd):
                 self.policy.suspend()
+                s.close_capture();self.next_at=now+INACTIVE_PERIOD
                 self.mode, self.title, self.detail = 'waiting', '会話を待っています', '原神に戻ると、自動で見守りを再開します。'
                 return
             if self.target != (hwnd, pid):
@@ -278,6 +297,7 @@ class Watcher:
                     self.policy.suspend()
                     return
                 # Reobserve immediately before every input, including transitions.
+                observed_at=time.monotonic()
                 fresh = s.capture(hwnd)
                 if s.foreground() != hwnd or s.game_window() != (hwnd,pid):
                     self.policy.suspend()
@@ -290,6 +310,11 @@ class Watcher:
                 if checked['state'] not in ('dialogue','choice'):
                     self.policy.suspend()
                     self.mode, self.title, self.detail = 'waiting', '会話を待っています', '次の会話で自動的に再開します。'
+                    return
+                if time.monotonic()-observed_at > MAX_FRESH_AGE:
+                    self.policy.suspend()
+                    self.mode,self.title,self.detail='waiting','会話を待っています','画面取得が遅れたため、次の確認までFを停止しています。'
+                    self.next_at=time.monotonic()+INACTIVE_PERIOD
                     return
                 # A UI callback may pause the watcher; check again at dispatch.
                 if not self.enabled or self.mode != 'dialogue' or self.setup_in_progress:
@@ -313,6 +338,7 @@ class Watcher:
             self.next_at = max(now+period,time.monotonic())
         except Exception as exc:
             self.policy.suspend()
+            s.close_capture()
             self.mode, self.title, self.detail = 'attention', '見守りを待機しています', str(exc)
             self.next_at = now + 1
         finally:
@@ -325,6 +351,7 @@ def main():
     parser.add_argument('--preview',action='store_true')
     parser.add_argument('--observe-only',action='store_true')
     parser.add_argument('--start-paused',action='store_true',help='一時停止状態で起動する')
+    parser.add_argument('--start-enabled',action='store_true',help='明示的に自動検知を有効にして起動する')
     parser.add_argument('--notify-after',type=int,choices=(30,60),default=60)
     parser.add_argument('--data-dir',type=Path)
     parser.add_argument('--screenshot',type=Path)
@@ -342,6 +369,9 @@ def main():
             return
     backend=None
     try:
+        if not args.preview:
+            from housekeeping import cleanup_runtime
+            cleanup_runtime(DATA)
         C.windll.shell32.SetCurrentProcessExplicitAppUserModelID('godca.GenshinDialogue.Local')
         if not args.preview:(DATA/'stop.flag').unlink(missing_ok=True)
         if not args.preview:
@@ -358,17 +388,21 @@ def main():
         interval=max(MIN_INTERVAL_MS,min(MAX_INTERVAL_MS,interval))
         from hid_input import VirtualKeyboard
         backend=VirtualKeyboard()
-        if not args.preview and not args.observe_only:
+        if not args.preview and not args.observe_only and args.start_enabled and not args.start_paused:
             backend.try_connect()
         watcher=Watcher(delay if delay in (30,60) else 60,sound=bool(settings.get('sound',True)),
                         observe_only=args.observe_only,backend=backend,interval_ms=interval,
                         random_timing=bool(settings.get('random_timing',True)))
-        if args.start_paused:watcher.toggle('startup')
+        if args.start_paused or not args.start_enabled:watcher.toggle('startup')
         from assist_ui import run
         run(watcher,DATA,args.preview,args.screenshot,args.quit_after)
     finally:
+        s.close_capture()
         if backend is not None:backend.close()
         if mutex:s.close_handle(mutex)
+        if not args.preview:
+            from housekeeping import cleanup_runtime
+            cleanup_runtime(DATA)
 
 
 if __name__=='__main__':

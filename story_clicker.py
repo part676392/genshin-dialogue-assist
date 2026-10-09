@@ -23,6 +23,7 @@ from mss.windows import gdi as mss_gdi
 # requesting layered-window composition. This changes only this process's
 # pinned mss 10.2.0 backend; it does not change Windows or installed packages.
 mss_gdi.CAPTUREBLT = 0
+cv2.setNumThreads(1)
 
 BASE = Path(__file__).resolve().parent
 ASSETS = BASE / "assets"
@@ -132,6 +133,16 @@ def bounds(hwnd):
 
 
 _capture_local = threading.local()
+
+
+def close_capture():
+    """Release the screen DC/DIB immediately when no longer observing."""
+    screen = getattr(_capture_local, 'screen', None)
+    if screen is not None:
+        try:
+            screen.close()
+        finally:
+            del _capture_local.screen
 
 
 def capture(hwnd):

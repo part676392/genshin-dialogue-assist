@@ -168,7 +168,7 @@ class Panel(QWidget):
         # Controls retain mouse interaction without taking keyboard focus from the game.
         for child in self.findChildren(QWidget):child.setFocusPolicy(Qt.NoFocus)
         self.timer=QTimer(self);self.timer.setTimerType(Qt.PreciseTimer)
-        self.timer.timeout.connect(self.poll);self.timer.start(10)
+        self.timer.timeout.connect(self.poll);self.timer.start(50)
         screen=min(QApplication.screens(),key=lambda sc:sc.geometry().x())
         area=screen.availableGeometry()
         self.move(area.x()+90,area.y()+140)
@@ -264,9 +264,19 @@ class Panel(QWidget):
 
     def toggle(self):
         self.watcher.toggle()
+        self.connect_input()
         if not self.preview:self.watcher.tick()
         else:self.watcher.mode='waiting' if self.watcher.enabled else 'paused'
         self.update_view()
+
+    def connect_input(self):
+        w=self.watcher
+        if (self.preview or w.observe_only or not w.enabled or self.setup_future is not None
+                or w.backend is None or w.backend.ready):return
+        w.setup_in_progress=True;w.policy.suspend();w.next_at=0
+        self.setup_button.setEnabled(False);self.toggle_button.setEnabled(False)
+        self.setup_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='usb-connect')
+        self.setup_future=self.setup_pool.submit(w.backend.try_connect)
 
     def setup_usb(self):
         if self.setup_future is not None or self.preview:return
@@ -286,7 +296,7 @@ class Panel(QWidget):
         sending=w.enabled and w.mode=='dialogue' and not w.observe_only
         self.input_state.setText(f'F送信対象 · 累計 {w.count} 回 · 最終 {w.last_input_at or "なし"}' if sending
                                 else f'F送信停止 · 累計 {w.count} 回 · 最終 {w.last_input_at or "なし"}')
-        key=(w.mode,w.enabled,w.title,w.detail)
+        key=(w.mode,w.enabled,w.title,w.detail,w.observe_only)
         if key==self.last_view:return
         self.last_view=key
         self.badge.setText({'waiting':'会話を探しています · F送信停止','dialogue':'会話を検知しました',
@@ -298,6 +308,9 @@ class Panel(QWidget):
                 'paused':'再開すると、会話の自動検知に戻ります。'}.get(w.mode,w.detail)
         if w.title=='原神を待っています':title='原神の起動を待機中'
         if w.title=='見守りを待機しています':title='自動検知を待機中'
+        if w.observe_only:
+            detail='検知だけのモードです。Fは送りません。'
+            if w.mode=='dialogue':title='会話を検知しました'
         self.heading.setText(title);self.detail.setText(detail)
         self.detail.setToolTip(w.detail)
         self.toggle_button.setText('一時停止' if w.enabled else '自動検知を再開')
@@ -313,6 +326,8 @@ class Panel(QWidget):
         return True
 
     def poll(self):
+        interval=50 if self.watcher.enabled else 150
+        if self.timer.interval()!=interval:self.timer.setInterval(interval)
         if self.setup_future is not None and self.setup_future.done():
             try:self.setup_future.result()
             except Exception as exc:self.watcher.backend.error=str(exc)
@@ -325,7 +340,8 @@ class Panel(QWidget):
                 pressed=bool(s.key_state(vk)&0x8000);rising=pressed and not self.previous[vk]
                 self.previous[vk]=pressed
                 if rising and vk==0x78:self.close();return
-                if rising and vk==0x77:self.watcher.toggle('F8')
+                if rising and vk==0x77:
+                    self.watcher.toggle('F8');self.connect_input()
             self.watcher.tick()
         self.update_view()
 
@@ -338,6 +354,7 @@ class Panel(QWidget):
         if not self.closing:
             self.closing=True;self.timer.stop()
             self.watcher.enabled=False;self.watcher.mode='closed'
+            s.close_capture()
             if self.watcher.backend is not None:self.watcher.backend.close()
             if not self.preview:self.watcher.publish(time.monotonic()+2)
         event.accept()

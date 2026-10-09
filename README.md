@@ -8,17 +8,17 @@ A Windows desktop app that detects dialogue in the Japanese Genshin Impact UI us
 
 ## ダウンロード / Download
 
-[Releases](https://github.com/part676392/genshin-dialogue-assist/releases) から `Genshin-Dialogue-Assist-v2.0.1-windows-x64.zip` を取得します。
+[Releases](https://github.com/part676392/genshin-dialogue-assist/releases) から `Genshin-Dialogue-Assist-v3.1.0-windows-x64.zip` を取得します。
 
 1. ZIPを右クリックして **すべて展開**。`会話アシスト.exe` を起動します。
 2. 初回だけ、右上の **USB設定** を押します。Windowsの管理者確認を許可してください。設定後はWindowsを一度再起動してください。自動では再起動しません。
-3. アプリと原神を起動し、原神を前面にします。会話の検出・入力は自動です。
+3. アプリと原神を起動し、原神を前面にします。F8または「自動検知を再開」で有効にします。起動直後は一時停止です。
 
-Download `Genshin-Dialogue-Assist-v2.0.1-windows-x64.zip` from [Releases](https://github.com/part676392/genshin-dialogue-assist/releases).
+Download `Genshin-Dialogue-Assist-v3.1.0-windows-x64.zip` from [Releases](https://github.com/part676392/genshin-dialogue-assist/releases).
 
 1. Right-click the ZIP and **Extract All**. Run `会話アシスト.exe`.
 2. On first use, click **USB設定 / USB setup** at the top right and approve the Windows administrator prompt. Restart Windows once after setup; the app never restarts it automatically.
-3. Open the app and Genshin Impact, then keep the game in the foreground. Dialogue detection and input are automatic.
+3. Open the app and Genshin Impact, then keep the game in the foreground. Press F8 or Resume to enable detection. The app starts paused.
 
 初回設定は、同梱の署名済み `usbip-win2` と必要なVC++ランタイムを導入します。USB機器が一時的に再接続されることがあります。以後の通常動作はローカルのみです。実行ファイル自体にはコード署名がないため、Windowsが発行元不明と表示する場合があります。
 
@@ -28,7 +28,7 @@ First-time setup installs the bundled signed `usbip-win2` package and its VC++ r
 |---|---|
 | 一時停止・再開 / Pause or resume | F8 |
 | 終了 / Quit | F9 |
-| 会話・認識した選択肢を進める / Advance detected dialogue and choices | F, 250 ms interval |
+| 会話・認識した選択肢を進める / Advance detected dialogue and choices | F, fixed/random 350–500 ms |
 
 会話終了・別アプリへの切り替え・最小化で入力を止めます。マウスを動かしたり、カーソルの範囲や表示を変更したりしません。画面の進行が30秒または60秒止まると、一度だけ通知できます。
 
@@ -116,3 +116,14 @@ Application code is licensed under GPL-3.0. Dependencies and game UI material re
 画面取得のCAPTUREBLTを無効にし、SRCCOPYのみを使用します。F送信0回でも画面取得が点滅を起こす可能性を、入力の不具合と分けて扱います。待機表示は「会話を探しています · F送信停止」で、累計送信回数と最終送信時刻も表示します。入力前に表示を更新し、その後に会話コントロールと送信許可を再確認します。
 
 Screen capture uses SRCCOPY without CAPTUREBLT, addressing the fullscreen flicker reported in [python-mss issue #179](https://github.com/BoboTiG/python-mss/issues/179). Waiting explicitly displays that F dispatch is stopped, with a cumulative dispatch counter and last dispatch time. The panel is painted before input, followed by a fresh dialogue-control and authorization check.
+
+## v3.1.0 誤送信防止・軽量化 / Dispatch guards and lighter runtime
+
+- 起動直後は一時停止。F8または再開ボタンで有効にします。停止中は仮想USBキーボードを切断し、再開時だけ接続します。接続処理の一時的なworkerは終了後に片付けます。新しい常駐サービスや自動起動タスクは作りません。
+- 前面の原神ウィンドウ、連続した会話判定、入力直前の会話コントロール、停止キーと修飾キーを確認します。直前の画面取得と判定に250ms以上かかった場合は、古い画面からFを送らず次の確認を待ちます。
+- 画像処理のスレッドを1本に制限。停止・別アプリ・原神未起動では画面取得のDCと画像バッファを解放します。停止中の処理周期は500ms、UI確認は150msです。
+- 状態記録は変更時と30秒ごとの生存確認に限定し、入力イベントは直近32件まで保持します。通常動作は画面画像を保存しません。起動・終了時には自分の古い一時ファイルだけを削除します。
+
+The app starts paused and connects its virtual keyboard only when resumed. Pause disconnects it. Capture resources are released when paused, unfocused or without the game. OpenCV uses one worker thread. A pre-input observation taking more than 250 ms is rejected. Unchanged status is written only every 30 seconds, and input event history is limited to 32 entries. Normal use saves no screenshots. Startup and exit remove only the app's abandoned temporary files. No additional resident service or startup task is installed.
+
+These changes reduce unintended input and resource use; they do not establish anti-cheat invisibility or account-ban protection. See the [official game terms](https://genshin.hoyoverse.com/en-us/company/terms).

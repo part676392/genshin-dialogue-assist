@@ -2,6 +2,12 @@
 
 検証日 / Date: **2026-10-09**
 
+## v3.1.0 ガードと資源管理 / Guards and resource lifecycle
+
+- 47件中46件成功、実DLL再接続1件は同セッションの前段で5回成功済みのため省略。 / 46 of 47 tests passed; the unchanged real-DLL reconnect test had already passed five cycles earlier in the session.
+- 遅い直前取得の拒否、一時停止時のUSB切断、USB未接続でも停止表示を維持、画面取得handleの一度だけの解放、30秒の状態記録周期、設定・ユーザー画像を残し古い専用tmpだけ片付けることを確認。 / Tests cover stale observations, USB disconnection on pause, paused status without USB, idempotent capture release, the 30-second status heartbeat, and cleanup that preserves settings and user pictures.
+- 停止・再開UIと実USB接続の確認、容量整理、公開配布の結果はリリースノートに記載。 / Release notes record UI/USB lifecycle validation, artifact cleanup and public packaging.
+
 ## v3.0.1 画面取得の点滅・送信表示 / Capture flicker and dispatch display
 
 - ユーザーが待機中の約0.5秒ごとの点滅を報告。アプリ終了とUSB切断後に「止まった」と回答。最新v3.0.0プロセスの送信記録は起動から0回であり、点滅をF送信と断定しない。 / The user reported roughly half-second flicker while waiting and confirmed it stopped after application shutdown. The latest process recorded zero F dispatches since launch; flicker is not treated as proof of key dispatch.

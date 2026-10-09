@@ -140,7 +140,7 @@ class NativeReconnectTests(unittest.TestCase):
 class RoutingTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.backend=SimpleNamespace(kind='usb-hid',ready=True,error='',tap_f=Mock(return_value=True))
+        self.backend=SimpleNamespace(kind='usb-hid',ready=True,error='',tap_f=Mock(return_value=True),close=Mock())
         self.w=a.Watcher(backend=self.backend)
         self.w.policy=Mock()
         self.w.policy.notify_after=60
@@ -195,6 +195,30 @@ class RoutingTests(unittest.TestCase):
         self.backend.tap_f.assert_not_called()
         self.assertEqual(self.w.mode,'waiting')
         self.assertEqual(self.w.policy.last_detection,dict(state='unknown'))
+
+    def test_stale_preinput_capture_is_rejected_under_load(self):
+        clock=[100.0]
+        def delayed_capture(*args):
+            clock[0]+=.3
+            return object()
+        self.m[7].side_effect=delayed_capture
+        with patch.object(a.time,'monotonic',side_effect=lambda:clock[0]):
+            self.w.tick()
+        self.backend.tap_f.assert_not_called()
+        self.assertEqual(self.w.mode,'waiting')
+
+    def test_paused_without_usb_stays_paused_and_never_captures(self):
+        self.w.enabled=False;self.backend.ready=False
+        self.w.tick()
+        self.assertEqual(self.w.mode,'paused')
+        self.m[7].assert_not_called()
+        self.backend.tap_f.assert_not_called()
+
+    def test_pause_disconnects_usb_instead_of_leaving_input_server_running(self):
+        self.w.enabled=False
+        self.w.tick()
+        self.backend.close.assert_called_once()
+        self.backend.tap_f.assert_not_called()
 
     def test_early_dispatch_is_blocked_even_when_processing_time_changes(self):
         self.w.input_due_at=101.0
