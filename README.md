@@ -44,9 +44,9 @@ Input stops when dialogue ends, another app becomes active, or the game is minim
 
 ## 入力間隔 / Input interval
 
-v3.0.0の「入力間隔」は「一定」と「ランダム」を切り替えられます。「一定」ではスライダーで200～350msを1ms単位で設定できます。「ランダム」では送信ごとに200～350msから間隔を選び、この間は固定値用のスライダーを無効にします。初期設定はランダムで、選んだ設定を次回起動にも引き継ぎます。処理負荷や画面遷移によって実際の送信間隔は長くなることがあります。ランダム化による検知回避は保証しません。
+v3.0.0の「入力間隔」は「一定」と「ランダム」を切り替えられます。「一定」ではスライダーで350～500msを1ms単位で設定できます。「ランダム」では送信ごとに350～500msから間隔を選び、この間は固定値用のスライダーを無効にします。初期設定はランダムで、選んだ設定を次回起動にも引き継ぎます。処理負荷や画面遷移によって実際の送信間隔は長くなることがあります。ランダム化による検知回避は保証しません。
 
-v3.0.0 lets you select Fixed or Random under Input interval. Fixed uses a slider from 200 to 350 ms in 1 ms steps. Random samples a new interval between 200 and 350 ms for each dispatch and disables the fixed-value slider. Random is the initial mode, and settings persist across launches. Processing load and screen transitions may lengthen actual dispatch intervals. Randomization does not establish detection avoidance.
+v3.0.0 lets you select Fixed or Random under Input interval. Fixed uses a slider from 350 to 500 ms in 1 ms steps. Random samples a new interval between 350 and 500 ms for each dispatch and disables the fixed-value slider. Random is the initial mode, and settings persist across launches. Processing load and screen transitions may lengthen actual dispatch intervals. Randomization does not establish detection avoidance.
 
 「会話待機中」にはFを送りません。会話または選択肢を連続確認し、送信直前も会話コントロールがある場合だけ送ります。送信前に会話が消えた場合、入力を取り消して待機表示へ戻ります。押下後のキー解放は必ず行います。
 

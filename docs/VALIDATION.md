@@ -4,7 +4,7 @@
 
 ## v3.0.0 入力間隔UI・待機中の送信禁止 / Timing UI and waiting gate
 
-- 「一定」の200～350msスライダー、「ランダム」の送信ごとの200～350ms選択、設定保存・読戻しを実UIで確認。200/275/350msとモード切り替えを検証し、テストのF送信数は0。 / The real UI verified fixed slider values 200/275/350 ms, per-dispatch random intervals within 200–350 ms, mode switching, settings persistence and restoration, with zero test key inputs.
+- 「一定」の350～500msスライダー、「ランダム」の送信ごとの350～500ms選択、設定保存・読戻しを実UIで確認。350/425/500msとモード切り替えを検証し、テストのF送信数は0。 / The real UI verified fixed slider values 350/425/500 ms, per-dispatch random intervals within 350–500 ms, mode switching, settings persistence and restoration, with zero test key inputs.
 - 37テスト中36件成功。実DLL再接続は同セッションの前段で5回成功しており、変更のない同試験を最終実行で繰り返さない。 / 36 of 37 tests passed; the unchanged real-DLL reconnection case had already passed five cycles earlier in the session and was not repeated in the final run.
 - 待機状態に誤ってFアクションが混じるケースでも、20回の検査でUSB送信0回。送信直前に会話が終了した場合も送信を取り消す。 / Even an inconsistent F action while waiting produces zero USB dispatches over 20 checks. Dialogue ending during the pre-input check also cancels dispatch.
 - 送信の早まりを防ぐ締切を追加し、画像処理時間が変わっても選んだ間隔より早い再送信を拒否。 / An input deadline rejects dispatches earlier than the chosen interval even when image-processing time changes.

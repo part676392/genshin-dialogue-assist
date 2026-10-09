@@ -197,19 +197,19 @@ class NativeTapTests(unittest.TestCase):
 class TimingTests(unittest.TestCase):
     def test_fixed_interval_slider_range_and_invalid_values(self):
         w=a.Watcher()
-        for value in (200,275,350):
+        for value in (350,425,500):
             w.configure_timing(value,False)
             self.assertEqual(w.input_period(),value/1000)
-        for value in (199,351,True,250.0):
+        for value in (349,501,True,425.0):
             with self.assertRaises(ValueError):w.configure_timing(value,False)
 
     def test_random_interval_samples_each_tap_within_bounds(self):
         w=a.Watcher(random_timing=True)
-        with patch.object(w.rng,'randint',side_effect=[200,350,227]) as draw:
-            self.assertEqual([w.input_period() for _ in range(3)],[.2,.35,.227])
+        with patch.object(w.rng,'randint',side_effect=[350,500,427]) as draw:
+            self.assertEqual([w.input_period() for _ in range(3)],[.35,.5,.427])
             self.assertEqual(draw.call_count,3)
-            draw.assert_called_with(200,350)
-        w.configure_timing(213,False)
-        self.assertEqual(w.input_period(),.213)
+            draw.assert_called_with(350,500)
+        w.configure_timing(413,False)
+        self.assertEqual(w.input_period(),.413)
 
 if __name__=='__main__':unittest.main()

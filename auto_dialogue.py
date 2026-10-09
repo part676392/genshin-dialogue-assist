@@ -21,9 +21,11 @@ BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ['LOCALAPPDATA']) / 'GenshinDialogue'
 TITLE = '原神 会話アシスト'
 VERSION = '3.0.0'
-# Explicit user setting after trying 500 ms and reporting it too slow.
-# A 250 ms target is not a measured game minimum or an evasion claim.
-TAP_PERIOD = .250
+# User-selected timing range; not a measured game minimum or an evasion claim.
+MIN_INTERVAL_MS = 350
+MAX_INTERVAL_MS = 500
+DEFAULT_INTERVAL_MS = 425
+TAP_PERIOD = DEFAULT_INTERVAL_MS/1000
 KEY_HOLD = .025
 IDLE_PERIOD = .150
 
@@ -137,8 +139,11 @@ def tap_key(hwnd, name, backend=None):
 
 
 class Watcher:
+    min_interval_ms = MIN_INTERVAL_MS
+    max_interval_ms = MAX_INTERVAL_MS
+
     def __init__(self, notify_after=60, sound=True, observe_only=False, backend=None,
-                 interval_ms=250, random_timing=False):
+                 interval_ms=DEFAULT_INTERVAL_MS, random_timing=False):
         self.policy = DialoguePolicy(notify_after)
         self.enabled, self.sound, self.observe_only = True, sound, observe_only
         self.title, self.detail = '会話を待っています', '原神の会話が始まったら、自動で送ります。'
@@ -153,7 +158,7 @@ class Watcher:
         self.backend = backend
         self.version = VERSION
         self.setup_in_progress = False
-        self.interval_ms = 250
+        self.interval_ms = DEFAULT_INTERVAL_MS
         self.random_timing = False
         self.rng = random.SystemRandom()
         self.configure_timing(interval_ms,random_timing)
@@ -161,13 +166,13 @@ class Watcher:
         self.input_due_at = 0
 
     def configure_timing(self, interval_ms, random_timing):
-        if type(interval_ms) is not int or not 200 <= interval_ms <= 350:
-            raise ValueError('入力間隔は200～350ミリ秒で設定してください。')
+        if type(interval_ms) is not int or not MIN_INTERVAL_MS <= interval_ms <= MAX_INTERVAL_MS:
+            raise ValueError(f'入力間隔は{MIN_INTERVAL_MS}～{MAX_INTERVAL_MS}ミリ秒で設定してください。')
         self.interval_ms = interval_ms
         self.random_timing = bool(random_timing)
 
     def input_period(self):
-        self.last_interval_ms = self.rng.randint(200,350) if self.random_timing else self.interval_ms
+        self.last_interval_ms = self.rng.randint(MIN_INTERVAL_MS,MAX_INTERVAL_MS) if self.random_timing else self.interval_ms
         return self.last_interval_ms/1000
 
     def toggle(self, reason='button'):
@@ -188,7 +193,7 @@ class Watcher:
                     target_interval_ms=None if self.random_timing else self.interval_ms,
                     timing_mode='random' if self.random_timing else 'fixed',
                     fixed_interval_ms=self.interval_ms,last_interval_ms=self.last_interval_ms,
-                    interval_range_ms=[200,350] if self.random_timing else [self.interval_ms,self.interval_ms],
+                    interval_range_ms=[MIN_INTERVAL_MS,MAX_INTERVAL_MS] if self.random_timing else [self.interval_ms,self.interval_ms],
                     recent_inputs_per_second=round(rate,2),
                     updated_at=time.strftime('%Y-%m-%dT%H:%M:%S'),pause_reason=self.pause_reason,
                     input_backend=self.backend.kind if self.backend else 'sendinput',
@@ -304,6 +309,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--preview',action='store_true')
     parser.add_argument('--observe-only',action='store_true')
+    parser.add_argument('--start-paused',action='store_true',help='一時停止状態で起動する')
     parser.add_argument('--notify-after',type=int,choices=(30,60),default=60)
     parser.add_argument('--data-dir',type=Path)
     parser.add_argument('--screenshot',type=Path)
@@ -332,8 +338,9 @@ def main():
             try:settings=json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
             except (OSError,ValueError):pass
         delay=settings.get('notify_after',args.notify_after)
-        interval=settings.get('interval_ms',250)
-        if type(interval) is not int or not 200 <= interval <= 350:interval=250
+        interval=settings.get('interval_ms',DEFAULT_INTERVAL_MS)
+        if type(interval) is not int:interval=DEFAULT_INTERVAL_MS
+        interval=max(MIN_INTERVAL_MS,min(MAX_INTERVAL_MS,interval))
         from hid_input import VirtualKeyboard
         backend=VirtualKeyboard()
         if not args.preview and not args.observe_only:
@@ -341,6 +348,7 @@ def main():
         watcher=Watcher(delay if delay in (30,60) else 60,sound=bool(settings.get('sound',True)),
                         observe_only=args.observe_only,backend=backend,interval_ms=interval,
                         random_timing=bool(settings.get('random_timing',True)))
+        if args.start_paused:watcher.toggle('startup')
         from assist_ui import run
         run(watcher,DATA,args.preview,args.screenshot,args.quit_after)
     finally:
