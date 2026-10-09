@@ -140,6 +140,15 @@ def gray(image):
     return cv2.cvtColor(np.asarray(image.convert("RGB")), cv2.COLOR_RGB2GRAY)
 
 
+def region(image, box, resample=Image.Resampling.LANCZOS):
+    """Read a reference-resolution ROI without resizing the whole game frame."""
+    if image.size == (1920, 1080):
+        return image.crop(box)
+    xscale, yscale = image.width / 1920, image.height / 1080
+    source = (box[0]*xscale, box[1]*yscale, box[2]*xscale, box[3]*yscale)
+    return image.resize((box[2]-box[0], box[3]-box[1]), resample, box=source)
+
+
 class DialogueDetector:
     def __init__(self):
         self.history = gray(Image.open(ASSETS / "history.png"))
@@ -147,32 +156,34 @@ class DialogueDetector:
         # Compare the list glyph in the centre, keeping the same strict score.
         self.history_glyph = self.history[6:-6, 6:-6]
         self.eye = gray(Image.open(ASSETS / "eye.png"))
+        # Like history, the eye's outer circle is translucent. Match its glyph
+        # so scene brightness cannot switch dialogue detection on and off.
+        self.eye_glyph = self.eye[6:-6, 6:-6]
         self.choice = gray(Image.open(ASSETS / "choice.png"))
 
     @staticmethod
     def match(region, template):
         return float(cv2.minMaxLoc(cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED))[1])
 
-    def inspect(self, image):
-        if image.size != (1920,1080):
-            image = image.resize((1920, 1080), Image.Resampling.LANCZOS)
+    def inspect(self, image, detect_choice=True):
         # "再生中" is shorter than "オート再生" and moves these icons left.
-        header = gray(image.crop((185,20,387,85)))
+        header = gray(region(image, (185,20,387,85)))
         history_full = self.match(header[:, :125], self.history)
         history = self.match(header[:, :125], self.history_glyph)
-        eye = self.match(header[:, 80:], self.eye)
-        name = np.asarray(image.crop((550,835,1370,900)))
+        eye_full = self.match(header[:, 80:], self.eye)
+        eye = self.match(header[:, 80:], self.eye_glyph)
+        name = np.asarray(region(image, (550,835,1370,900)))
         yellow = int(np.sum((name[:, :, 0] > 190) & (name[:, :, 1] > 140)
                             & (name[:, :, 2] < 110)))
-        text = np.asarray(image.crop((250,902,1670,985)))
+        text = np.asarray(region(image, (250,902,1670,985)))
         r,g,b=text[:,:,0],text[:,:,1],text[:,:,2]
         lo=np.minimum(np.minimum(r,g),b)
         hi=np.maximum(np.maximum(r,g),b)
         white = int(np.sum((lo > 215) & (hi-lo < 25)))
         dialogue = history > 0.94 and eye > 0.94 and (yellow > 60 or white > 80)
-        choice = self.match(gray(image.crop((1030,390,1850,850))),self.choice) if dialogue else 0
+        choice = self.match(gray(region(image, (1030,390,1850,850))),self.choice) if dialogue and detect_choice else 0
         state = "choice" if dialogue and choice > 0.88 else "dialogue" if dialogue else "unknown"
-        return {"state": state, "history": round(history, 4), "history_full": round(history_full,4), "eye": round(eye, 4),
+        return {"state": state, "history": round(history, 4), "history_full": round(history_full,4), "eye": round(eye, 4), "eye_full": round(eye_full,4),
                 "choice": round(choice, 4), "yellow": yellow, "white": white}
 
     def choice_point(self, image):

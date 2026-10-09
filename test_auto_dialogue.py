@@ -15,6 +15,37 @@ def frame(name):
 
 @unittest.skipUnless((FIXTURES/'admin-after.png').exists(), 'Private gameplay fixtures are not distributed')
 class PolicyTests(unittest.TestCase):
+    def test_eye_background_does_not_stop_dialogue_at_1440p(self):
+        image=frame('admin-after.png')
+        # The eye glyph is stable while its outer translucent circle follows
+        # the scene. Keep glyph pixels and replace only the outer six pixels.
+        import numpy as np
+        detector=s.DialogueDetector()
+        eye=s.gray(image.crop((265,20,387,85)))
+        import cv2
+        scores=cv2.matchTemplate(eye,detector.eye,cv2.TM_CCOEFF_NORMED)
+        _,_,_,(x,y)=cv2.minMaxLoc(scores)
+        x+=265;y+=20
+        width,height=detector.eye.shape[1],detector.eye.shape[0]
+        glyph=image.crop((x+6,y+6,x+width-6,y+height-6))
+        for shade in (0,90,255):
+            with self.subTest(shade=shade):
+                modified=image.copy()
+                modified.paste((shade,shade,shade),(x,y,x+width,y+height))
+                modified.paste(glyph,(x+6,y+6))
+                scaled=modified.resize((2560,1440),Image.Resampling.LANCZOS)
+                p=a.DialoguePolicy()
+                self.assertIsNone(p.inspect(scaled,0)['action'])
+                self.assertEqual(p.inspect(scaled,.15)['action'],'F')
+
+    def test_resized_choice_and_gameplay_boundaries(self):
+        for name,state in (('autoplay-choice.png','choice'),('drink-dialogue-4.png','choice'),
+                           ('user-menu.png','unknown'),('task-current.png','unknown'),
+                           ('user-cinematic-no-ui.png','unknown')):
+            with self.subTest(name=name):
+                image=frame(name).resize((2560,1440),Image.Resampling.LANCZOS)
+                self.assertEqual(s.DialogueDetector().inspect(image)['state'],state)
+
     def test_user_reported_dim_history_and_short_subtitle_start_f(self):
         for filename in ('user-dim-history.png','user-short-subtitle.png'):
             with self.subTest(filename=filename):
@@ -102,7 +133,7 @@ class WatcherTests(unittest.TestCase):
         self.w=a.Watcher()
 
     def step(self):
-        self.w.next_at=0;self.w.tick()
+        self.w.next_at=0;self.w.input_due_at=0;self.w.tick()
 
     def test_other_app_never_captured_or_controlled_and_return_resumes(self):
         self.m[2].return_value=999
@@ -116,6 +147,12 @@ class WatcherTests(unittest.TestCase):
         self.step()
         self.m[8].side_effect=[frame('admin-after.png'),frame('task-current.png')]
         self.step();self.m[9].assert_not_called()
+
+    def test_caption_to_choice_transition_keeps_f_input(self):
+        self.step()
+        self.m[8].side_effect=[frame('admin-after.png'),frame('autoplay-choice.png')]
+        self.step()
+        self.m[9].assert_called_once_with(123,'F')
 
     def test_choice_does_not_move_mouse(self):
         self.m[8].return_value=frame('drink-dialogue-4.png')
@@ -156,5 +193,23 @@ class NativeTapTests(unittest.TestCase):
                  patch.object(s,'send_input') as send:
                 self.assertFalse(a.tap_key(123,'F'))
                 send.assert_not_called()
+
+class TimingTests(unittest.TestCase):
+    def test_fixed_interval_slider_range_and_invalid_values(self):
+        w=a.Watcher()
+        for value in (200,275,350):
+            w.configure_timing(value,False)
+            self.assertEqual(w.input_period(),value/1000)
+        for value in (199,351,True,250.0):
+            with self.assertRaises(ValueError):w.configure_timing(value,False)
+
+    def test_random_interval_samples_each_tap_within_bounds(self):
+        w=a.Watcher(random_timing=True)
+        with patch.object(w.rng,'randint',side_effect=[200,350,227]) as draw:
+            self.assertEqual([w.input_period() for _ in range(3)],[.2,.35,.227])
+            self.assertEqual(draw.call_count,3)
+            draw.assert_called_with(200,350)
+        w.configure_timing(213,False)
+        self.assertEqual(w.input_period(),.213)
 
 if __name__=='__main__':unittest.main()

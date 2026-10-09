@@ -164,6 +164,22 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(self.w.count,1)
         for mock in self.m[8:]:mock.assert_not_called()
 
+    def test_early_dispatch_is_blocked_even_when_processing_time_changes(self):
+        self.w.input_due_at=101.0
+        with patch.object(a.time,'monotonic',return_value=100.9):
+            self.w.tick()
+        self.backend.tap_f.assert_not_called()
+        self.assertEqual(self.w.next_at,101.0)
+
+    def test_waiting_state_never_sends_usb_even_with_an_inconsistent_action(self):
+        self.w.policy.inspect.return_value=dict(state='unknown',action='F',notify=False,stalled=False)
+        for _ in range(20):
+            self.w.next_at=0;self.w.tick()
+        self.assertEqual(self.w.mode,'waiting')
+        self.assertEqual(self.w.count,0)
+        self.backend.tap_f.assert_not_called()
+        self.m[8].assert_not_called()
+
     def test_missing_usb_blocks_capture_and_never_falls_back(self):
         self.backend.ready=False;self.backend.error='setup required'
         self.w.tick()

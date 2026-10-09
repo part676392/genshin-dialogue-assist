@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, QSize
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QWidget, QLabel
 from qfluentwidgets import (PrimaryPushButton, TransparentToolButton, SwitchButton,
-    SegmentedWidget, PushButton, FluentIcon as FI, setTheme, setThemeColor, Theme, setFont, setCustomStyleSheet)
+    SegmentedWidget, PushButton, Slider, FluentIcon as FI, setTheme, setThemeColor, Theme, setFont, setCustomStyleSheet)
 
 import story_clicker as s
 
@@ -85,7 +85,7 @@ class Panel(QWidget):
         self.setup_pool=None;self.setup_future=None
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFocusPolicy(Qt.NoFocus)
-        self.setFixedSize(490,326)
+        self.setFixedSize(490,420)
         self.setWindowTitle('原神 会話アシスト')
         self.setWindowIcon(QIcon(str(Path(__file__).parent/'assets'/'dialogue-assist.ico')))
         self.setStyleSheet('QWidget{font-family:"Yu Gothic UI";}')
@@ -137,8 +137,28 @@ class Panel(QWidget):
         for child in self.delay.items.values():
             child.setFixedSize(79,30);setFont(child,12)
         self.delay.setAccessibleName('停止通知までの時間')
-        label(self,f'v{watcher.version} · USB入力 · AI 送信なし',24,300,235,17,10,MUTED)
-        label(self,'F8  一時停止・再開     /     F9  終了',270,300,208,17,10,MUTED)
+        label(self,'入力間隔',24,300,120,24,12,MUTED)
+        self.timing_mode=SegmentedWidget(self)
+        self.timing_mode.setGeometry(240,298,226,30)
+        self.timing_mode.addItem('fixed','一定',lambda:self.timing_changed(False))
+        self.timing_mode.addItem('random','ランダム',lambda:self.timing_changed(True))
+        self.timing_mode.setCurrentItem('random' if watcher.random_timing else 'fixed')
+        for child in self.timing_mode.items.values():child.setFixedSize(112,30);setFont(child,12)
+        self.timing_mode.setAccessibleName('入力間隔を一定またはランダムに切り替える')
+        self.interval_slider=Slider(Qt.Horizontal,self)
+        self.interval_slider.setGeometry(24,338,310,24)
+        self.interval_slider.setRange(200,350)
+        self.interval_slider.setValue(watcher.interval_ms)
+        self.interval_slider.setSingleStep(1)
+        self.interval_slider.setAccessibleName('一定の入力間隔、200から350ミリ秒')
+        self.interval_slider.valueChanged.connect(self.interval_changed)
+        self.interval_value=label(self,'',344,335,122,27,13,INK)
+        self.interval_value.setAlignment(Qt.AlignRight|Qt.AlignVCenter)
+        label(self,'200 ms',24,363,90,18,10,MUTED)
+        label(self,'350 ms',289,363,60,18,10,MUTED)
+        self.refresh_timing()
+        label(self,f'v{watcher.version} · USB入力 · AI 送信なし',24,394,235,17,10,MUTED)
+        label(self,'F8  一時停止・再開     /     F9  終了',270,394,208,17,10,MUTED)
         # Controls retain mouse interaction without taking keyboard focus from the game.
         for child in self.findChildren(QWidget):child.setFocusPolicy(Qt.NoFocus)
         self.timer=QTimer(self);self.timer.setTimerType(Qt.PreciseTimer)
@@ -152,7 +172,7 @@ class Panel(QWidget):
         p=QPainter(self);p.setRenderHint(QPainter.Antialiasing)
         p.fillRect(self.rect(),QColor(BG))
         p.setPen(QPen(QColor('#cdd2c6'),1));p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(QRectF(.5,.5,489,325),12,12)
+        p.drawRoundedRect(QRectF(.5,.5,self.width()-1,self.height()-1),12,12)
         # An app mark rather than a text-only title bar.
         p.setPen(Qt.NoPen);p.setBrush(QColor(INK));p.drawRoundedRect(QRectF(21,18,23,23),6,6)
         p.setPen(QPen(QColor('#f3f0df'),1.5,Qt.SolidLine,Qt.RoundCap,Qt.RoundJoin))
@@ -210,8 +230,25 @@ class Panel(QWidget):
         self.data.mkdir(parents=True,exist_ok=True)
         temp=self.data/'settings.tmp'
         temp.write_text(json.dumps(dict(sound=self.watcher.sound,
-            notify_after=self.watcher.policy.notify_after)),encoding='utf-8')
+            notify_after=self.watcher.policy.notify_after,interval_ms=self.watcher.interval_ms,
+            random_timing=self.watcher.random_timing)),encoding='utf-8')
         temp.replace(self.data/'settings.json')
+
+    def refresh_timing(self):
+        w=self.watcher
+        self.interval_slider.setEnabled(not w.random_timing)
+        self.interval_value.setText('200～350 ms' if w.random_timing else f'{w.interval_ms} ms')
+        self.interval_slider.setToolTip('「一定」に切り替えると間隔を調整できます。' if w.random_timing
+                                      else '小さい数値ほど速く送ります。')
+
+    def timing_changed(self,random_timing):
+        self.watcher.configure_timing(self.watcher.interval_ms,random_timing)
+        self.timing_mode.setCurrentItem('random' if random_timing else 'fixed')
+        self.refresh_timing();self.save_settings()
+
+    def interval_changed(self,value):
+        self.watcher.configure_timing(value,self.watcher.random_timing)
+        self.refresh_timing();self.save_settings()
 
     def sound_changed(self,value):
         self.watcher.sound=value;self.save_settings()

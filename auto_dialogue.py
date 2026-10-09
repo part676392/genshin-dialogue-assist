@@ -6,6 +6,7 @@ from collections import deque
 import ctypes as C
 import json
 import os
+import random
 from pathlib import Path
 import sys
 import time
@@ -19,7 +20,7 @@ import story_clicker as s
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ['LOCALAPPDATA']) / 'GenshinDialogue'
 TITLE = '原神 会話アシスト'
-VERSION = '2.0.1'
+VERSION = '3.0.0'
 # Explicit user setting after trying 500 ms and reporting it too slow.
 # A 250 ms target is not a measured game minimum or an evasion claim.
 TAP_PERIOD = .250
@@ -28,17 +29,14 @@ IDLE_PERIOD = .150
 
 
 def signature(frame, dialogue=False):
-    image = frame if frame.size==(1920,1080) else frame.resize((1920, 1080))
-    if dialogue:
-        image = image.crop((240, 400, 1820, 990))
-    else:
-        image = image.crop((70, 100, 1830, 1000))
-    return np.asarray(image.convert('L').resize((160, 90)), dtype=np.int16)
+    box = (240,400,1820,990) if dialogue else (70,100,1830,1000)
+    xscale, yscale = frame.width/1920, frame.height/1080
+    source = (box[0]*xscale,box[1]*yscale,box[2]*xscale,box[3]*yscale)
+    return np.asarray(frame.convert('L').resize((160,90),box=source),dtype=np.int16)
 
 
 def caption_signature(frame):
-    frame = frame if frame.size==(1920,1080) else frame.resize((1920,1080))
-    pixels = np.asarray(frame.crop((250, 835, 1670, 985)))
+    pixels = np.asarray(s.region(frame,(250,835,1670,985),Image.Resampling.BICUBIC))
     r,g,b=pixels[:,:,0],pixels[:,:,1],pixels[:,:,2]
     lo=np.minimum(np.minimum(r,g),b);hi=np.maximum(np.maximum(r,g),b)
     white = (lo > 210) & (hi-lo < 30)
@@ -139,7 +137,8 @@ def tap_key(hwnd, name, backend=None):
 
 
 class Watcher:
-    def __init__(self, notify_after=60, sound=True, observe_only=False, backend=None):
+    def __init__(self, notify_after=60, sound=True, observe_only=False, backend=None,
+                 interval_ms=250, random_timing=False):
         self.policy = DialoguePolicy(notify_after)
         self.enabled, self.sound, self.observe_only = True, sound, observe_only
         self.title, self.detail = '会話を待っています', '原神の会話が始まったら、自動で送ります。'
@@ -154,6 +153,22 @@ class Watcher:
         self.backend = backend
         self.version = VERSION
         self.setup_in_progress = False
+        self.interval_ms = 250
+        self.random_timing = False
+        self.rng = random.SystemRandom()
+        self.configure_timing(interval_ms,random_timing)
+        self.last_interval_ms = self.interval_ms
+        self.input_due_at = 0
+
+    def configure_timing(self, interval_ms, random_timing):
+        if type(interval_ms) is not int or not 200 <= interval_ms <= 350:
+            raise ValueError('入力間隔は200～350ミリ秒で設定してください。')
+        self.interval_ms = interval_ms
+        self.random_timing = bool(random_timing)
+
+    def input_period(self):
+        self.last_interval_ms = self.rng.randint(200,350) if self.random_timing else self.interval_ms
+        return self.last_interval_ms/1000
 
     def toggle(self, reason='button'):
         self.enabled = not self.enabled
@@ -170,7 +185,11 @@ class Watcher:
                     notify_after=self.policy.notify_after, sound=self.sound,
                     ai_calls=0, observe_only=self.observe_only, foreground=s.foreground(),
                     target=self.target, events=list(self.events),version=VERSION,input_key='F',
-                    target_interval_ms=round(TAP_PERIOD*1000),recent_inputs_per_second=round(rate,2),
+                    target_interval_ms=None if self.random_timing else self.interval_ms,
+                    timing_mode='random' if self.random_timing else 'fixed',
+                    fixed_interval_ms=self.interval_ms,last_interval_ms=self.last_interval_ms,
+                    interval_range_ms=[200,350] if self.random_timing else [self.interval_ms,self.interval_ms],
+                    recent_inputs_per_second=round(rate,2),
                     updated_at=time.strftime('%Y-%m-%dT%H:%M:%S'),pause_reason=self.pause_reason,
                     input_backend=self.backend.kind if self.backend else 'sendinput',
                     input_ready=self.backend.ready if self.backend else True,
@@ -245,23 +264,32 @@ class Watcher:
                 self.detail = '会話も選択肢も F で進めています。'
             else:
                 self.mode, self.title, self.detail = 'waiting', '会話を待っています', '探索や戦闘はそのまま。次の会話で再開します。'
-            if decision['action'] and not self.observe_only:
+            if decision['action'] and self.mode == 'dialogue' and not self.observe_only:
                 # Reobserve immediately before every input, including transitions.
                 fresh = s.capture(hwnd)
                 if s.foreground() != hwnd or s.game_window() != (hwnd,pid):
                     self.policy.suspend()
                     return
-                if self.policy.detector.inspect(fresh)['state'] != decision['state']:
+                # Both dialogue and choices use F. Recheck the dialogue controls
+                # without repeating the expensive choice search or rejecting a
+                # valid transition from a caption to a choice.
+                if self.policy.detector.inspect(fresh,detect_choice=False)['state'] not in ('dialogue','choice'):
                     self.policy.suspend()
+                    self.mode, self.title, self.detail = 'waiting', '会話を待っています', '次の会話で自動的に再開します。'
+                    return
+                input_started=time.monotonic()
+                if input_started < self.input_due_at:
+                    self.next_at=self.input_due_at
                     return
                 sent = (tap_key(hwnd, decision['action'], self.backend) if self.backend is not None
                         else tap_key(hwnd, decision['action']))
                 if sent:
                     self.count += 1
                     self.input_times.append(time.monotonic())
+                    self.input_due_at=input_started+self.input_period()
             # Include capture, classification, and key hold in the period budget.
             # An overrun never causes a catch-up burst of unobserved key taps.
-            period=TAP_PERIOD if decision['action'] else IDLE_PERIOD
+            period=self.last_interval_ms/1000 if decision['action'] else IDLE_PERIOD
             self.next_at = max(now+period,time.monotonic())
         except Exception as exc:
             self.policy.suspend()
@@ -304,12 +332,15 @@ def main():
             try:settings=json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
             except (OSError,ValueError):pass
         delay=settings.get('notify_after',args.notify_after)
+        interval=settings.get('interval_ms',250)
+        if type(interval) is not int or not 200 <= interval <= 350:interval=250
         from hid_input import VirtualKeyboard
         backend=VirtualKeyboard()
         if not args.preview and not args.observe_only:
             backend.try_connect()
         watcher=Watcher(delay if delay in (30,60) else 60,sound=bool(settings.get('sound',True)),
-                        observe_only=args.observe_only,backend=backend)
+                        observe_only=args.observe_only,backend=backend,interval_ms=interval,
+                        random_timing=bool(settings.get('random_timing',True)))
         from assist_ui import run
         run(watcher,DATA,args.preview,args.screenshot,args.quit_after)
     finally:

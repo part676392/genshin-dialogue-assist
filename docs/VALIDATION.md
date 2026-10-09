@@ -1,6 +1,27 @@
 # 検証結果 / Validation
 
-検証日 / Date: **2026-09-30**
+検証日 / Date: **2026-10-09**
+
+## v3.0.0 入力間隔UI・待機中の送信禁止 / Timing UI and waiting gate
+
+- 「一定」の200～350msスライダー、「ランダム」の送信ごとの200～350ms選択、設定保存・読戻しを実UIで確認。200/275/350msとモード切り替えを検証し、テストのF送信数は0。 / The real UI verified fixed slider values 200/275/350 ms, per-dispatch random intervals within 200–350 ms, mode switching, settings persistence and restoration, with zero test key inputs.
+- 37テスト中36件成功。実DLL再接続は同セッションの前段で5回成功しており、変更のない同試験を最終実行で繰り返さない。 / 36 of 37 tests passed; the unchanged real-DLL reconnection case had already passed five cycles earlier in the session and was not repeated in the final run.
+- 待機状態に誤ってFアクションが混じるケースでも、20回の検査でUSB送信0回。送信直前に会話が終了した場合も送信を取り消す。 / Even an inconsistent F action while waiting produces zero USB dispatches over 20 checks. Dialogue ending during the pre-input check also cancels dispatch.
+- 送信の早まりを防ぐ締切を追加し、画像処理時間が変わっても選んだ間隔より早い再送信を拒否。 / An input deadline rejects dispatches earlier than the chosen interval even when image-processing time changes.
+- 実仮想USBキーボードからWindows Raw InputへF押下3・解放3を受信。2区間は249.87/249.36ms。予定12回の途中で前面が変わったため、ガードで以後の送信を停止した。 / Windows Raw Input received 3 F down and 3 F up events from the real virtual USB keyboard, with 249.87/249.36 ms intervals. The bounded 12-tap probe stopped early when foreground changed, so this is a three-pair reception check rather than a completed 12-tap run.
+
+## v2.0.2 会話判定・処理時間の修正 / Detection and timing fix
+
+2560×1440の実画面で、非表示アイコンの半透明の外周が背景に応じて変わり、従来の比較値が0.929～0.940へ下がって会話を取りこぼす現象を再現しました。外周を除いたアイコンの中身は0.954で安定していたため、履歴アイコンと同じく中身を比較します。必要な領域だけ縮小し、入力直前は会話コントロールを再確認して、選択肢の探索を重複させません。通常会話→選択肢はどちらもFで進めるため、有効な切り替わりで入力を拒否しません。
+
+On live 2560×1440 frames, the hide-dialogue icon's translucent border varied with the scene, lowering the previous score to 0.929–0.940 and missing dialogue. Its inner glyph remained stable at 0.954. v2.0.2 matches the glyph and resizes only relevant regions. The immediate pre-input check still verifies dialogue controls, but avoids a duplicate choice search and accepts caption-to-choice transitions because both use F.
+
+- 同じ実画面12枚の会話認識は0/12→12/12。判定処理の中央値は104.55→66.86ms（同じPC・同じ画像、初回比較）。 / Recognition on the same 12 live frames improved from 0/12 to 12/12. Median detector time changed from 104.55 to 66.86 ms in the initial comparison on the same PC and frames.
+- 1440pで明暗3種類のアイコン外周、通常会話、選択肢、メニュー、探索、コントロールのない演出を検証。 / Regression coverage includes three border brightness levels at 1440p, dialogue, choices, menu, exploration, and cinematics without dialogue controls.
+- 回帰テスト33件中32件成功、実DLL再接続の1件は別の実行で5回成功。 / 32 of 33 regression tests passed in the final run; the real-DLL reconnection test passed five cycles in a separate earlier run.
+- 目標250ms・押下25ms・仮想USB HID入力を維持。実際の送信周期は画面取得とPC負荷にも依存します。 / The 250 ms target, 25 ms hold, and virtual USB HID transport are retained. Actual dispatch intervals also depend on capture time and PC load.
+
+この節はv2.0.2のローカル本体検証です。全会話での台詞進行の最短時間を証明するものではありません。 / This section records local v2.0.2 validation and does not establish a minimum dialogue-advance time across all scenes.
 
 ## v2.0.1 再接続修正 / Reconnection fix
 
