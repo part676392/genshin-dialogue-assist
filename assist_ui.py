@@ -339,7 +339,7 @@ class Panel(QWidget):
             self.closing=True;self.timer.stop()
             self.watcher.enabled=False;self.watcher.mode='closed'
             if self.watcher.backend is not None:self.watcher.backend.close()
-            self.watcher.publish(time.monotonic()+2)
+            if not self.preview:self.watcher.publish(time.monotonic()+2)
         event.accept()
 
 
